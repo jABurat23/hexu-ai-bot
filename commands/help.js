@@ -1,6 +1,5 @@
 const PAGE_SIZE = 6;
 const OWNER_GITHUB_USERNAME = "jABurat23";
-const OWNER_GITHUB_URL = `https://github.com/${OWNER_GITHUB_USERNAME}`;
 
 module.exports = {
   name: "help",
@@ -20,36 +19,17 @@ module.exports = {
     const pageCommands = all.slice(start, start + PAGE_SIZE);
 
     const lines = pageCommands.map(
-      (c) => `⮐ !${c.name}\n   ${c.description || "No description."}`
+      (c) => `⮑ !${c.name}\n   ${c.description || "No description."}`
     );
 
     const footer = [
       `Page ${page}/${totalPages} · ${all.length} total commands`,
       page < totalPages ? `Tip: !help ${page + 1} to see the next page` : null,
+      `Owner: ${OWNER_GITHUB_USERNAME}`,
     ]
       .filter((line) => line !== null)
       .join("\n");
 
-    const text = [
-      "┏━━━━━━━━━━━━━━━━━┓",
-      "   『 HEXU AI COMMANDS 』",
-      "┗━━━━━━━━━━━━━━━━━┛",
-      "",
-      lines.join("\n\n"),
-      "",
-      footer,
-    ].join("\n");
-
-    return {
-      type: "button_template",
-      text,
-      buttons: [
-        {
-          type: "web_url",
-          url: OWNER_GITHUB_URL,
-          title: OWNER_GITHUB_USERNAME,
-        },
-      ],
-    };
+    return ["『 HEXU AI COMMANDS 』", "", lines.join("\n\n"), "", footer].join("\n");
   },
 };
