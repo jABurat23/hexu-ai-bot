@@ -1,0 +1,42 @@
+require("dotenv").config();
+
+const required = [
+  "PAGE_ACCESS_TOKEN",
+  "WEBHOOK_VERIFY_TOKEN",
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+];
+
+const missing = required.filter((key) => !process.env[key]);
+if (missing.length) {
+  console.error(`Missing required env vars: ${missing.join(", ")}`);
+  console.error("Copy .env.example to .env and fill these in.");
+  process.exit(1);
+}
+
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.warn(
+    "ANTHROPIC_API_KEY not set — commands will work, but the AI fallback reply will fail silently until it's added."
+  );
+}
+
+if (!process.env.APP_SECRET) {
+  console.warn(
+    "APP_SECRET not set — webhook signature verification is DISABLED. Fine for early local testing, not for production."
+  );
+}
+
+module.exports = {
+  pageAccessToken: process.env.PAGE_ACCESS_TOKEN,
+  webhookVerifyToken: process.env.WEBHOOK_VERIFY_TOKEN,
+  appSecret: process.env.APP_SECRET || null,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
+  supabaseUrl: process.env.SUPABASE_URL,
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  port: process.env.PORT || 3000,
+  // LOG_LEVEL: debug | info | warn | error (default info — set to debug
+  // locally when you need to see every message's text/branch decision).
+  logLevel: process.env.LOG_LEVEL || "info",
+  // Set LOG_COLOR=false if your log viewer doesn't render ANSI colors well.
+  logColor: process.env.LOG_COLOR !== "false",
+};

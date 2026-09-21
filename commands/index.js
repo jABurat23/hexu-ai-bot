@@ -1,25 +1,18 @@
-// Each command: key is the typed word (without prefix), value is an async
-// handler (psid, args) => string reply.
-// Add new commands here as you build integrations.
+// This file is only a bridge: it loads every command file in this folder
+// and connects them to the message service. It has no command logic of its
+// own — to add a command, create a new file here (see ping.js / help.js for
+// the shape) and it'll be picked up automatically.
+const fs = require("fs");
+const path = require("path");
+
 const PREFIX = "!";
 
-const commands = {
-  help: async () => {
-    const list = Object.keys(commands)
-      .map((c) => `${PREFIX}${c}`)
-      .join(", ");
-    return `Here's what I can do: ${list}\nAnything else you type, I'll just chat with you about.`;
-  },
-
-  ping: async () => "pong 🏓",
-
-  // Example placeholder for an API integration — replace with a real call.
-  // weather: async (psid, args) => {
-  //   const city = args.join(" ") || "Manila";
-  //   const data = await fetchWeather(city);
-  //   return `It's ${data.tempC}°C and ${data.condition} in ${city}.`;
-  // },
-};
+const registry = {};
+for (const file of fs.readdirSync(__dirname)) {
+  if (file === "index.js" || !file.endsWith(".js")) continue;
+  const command = require(path.join(__dirname, file));
+  registry[command.name] = command;
+}
 
 /**
  * Returns { isCommand, name, args } for a given raw message text.
@@ -32,13 +25,12 @@ function parseCommand(text) {
 
 /**
  * Runs a command if it exists. Returns null if the command name is unknown
- * (caller can decide how to handle that — e.g. fall through to AI, or reply
- * with an error).
+ * (caller decides how to handle that — currently: reply with an error).
  */
 async function runCommand(name, psid, args) {
-  const handler = commands[name];
-  if (!handler) return null;
-  return handler(psid, args);
+  const command = registry[name];
+  if (!command) return null;
+  return command.handler(psid, args, registry);
 }
 
-module.exports = { PREFIX, parseCommand, runCommand, commands };
+module.exports = { PREFIX, parseCommand, runCommand, registry };
