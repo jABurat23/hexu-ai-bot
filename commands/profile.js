@@ -3,6 +3,7 @@ const { getRoleString } = require("../lib/roles");
 
 module.exports = {
   name: "profile",
+  category: "User",
   description: "View your profile, PSID, and access role.",
   handler: async (user) => {
     // We already have the full user object with access_role and created_at

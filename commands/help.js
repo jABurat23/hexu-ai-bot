@@ -3,6 +3,8 @@ const { ROLES, hasPermission, getRoleString } = require("../lib/roles");
 
 module.exports = {
   name: "help",
+  aliases: ["menu"],
+  category: "General",
   description: "List all available commands grouped by role, or !help <command> for details.",
   handler: async (user, args, registry) => {
     const query = args[0];
@@ -36,14 +38,18 @@ module.exports = {
         `│ !${command.name}`,
         "├── INFO ──⭔",
         `│ Description: ${command.description || "No description available."}`,
+        `│ Category: ${command.category || "General"}`,
         `│ Required Role: ${getRoleString(reqRole)}`,
-        `│ Usage: !${command.name}`,
+        `│ Usage: ${command.usage || `!${command.name}`}`,
+        `│ Cooldown: ${command.cooldownSeconds || 0}s`,
         "╰────────⭓",
       ].join("\n");
     }
 
     // List all commands grouped by role
-    const all = Object.values(registry).sort((a, b) => a.name.localeCompare(b.name));
+    const all = [...new Set(Object.values(registry))].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
     
     // Group commands based on required role
     const grouped = {};
@@ -76,8 +82,17 @@ module.exports = {
       if (commands && commands.length > 0) {
         body.push("├─────⭔");
         body.push(`│ ${role.emoji} ${role.name} COMMANDS`);
-        for (const c of commands) {
-          body.push(`│ ⮑ !${c.name} — ${c.description || "No description."}`);
+        const categories = {};
+        for (const command of commands) {
+          const category = command.category || "General";
+          if (!categories[category]) categories[category] = [];
+          categories[category].push(command);
+        }
+        for (const [category, categoryCommands] of Object.entries(categories)) {
+          body.push(`│ ${category}:`);
+          for (const c of categoryCommands) {
+            body.push(`│ ⮑ !${c.name} — ${c.description || "No description."}`);
+          }
         }
       }
     }

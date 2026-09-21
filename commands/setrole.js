@@ -3,6 +3,9 @@ const { ROLES, getRoleString } = require("../lib/roles");
 
 module.exports = {
   name: "setrole",
+  category: "Admin",
+  usage: "!setrole <psid> <role>",
+  cooldownSeconds: 5,
   description: "Promote or demote a user to a specific role. Owner only.",
   requiredRole: "OWNER", // Only OWNER can run this command
   handler: async (_user, args) => {

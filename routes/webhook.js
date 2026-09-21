@@ -3,8 +3,13 @@ const express = require("express");
 const config = require("../config");
 const logger = require("../utils/logger");
 const { handleEvent } = require("../services/messageService");
+const MessageQueue = require("../utils/messageQueue");
 
 const router = express.Router();
+const messageQueue = new MessageQueue({
+  maxSize: config.queueMaxSize,
+  concurrency: config.queueConcurrency,
+});
 
 // --- Webhook verification (Meta calls this once when you save the config) ---
 router.get("/", (req, res) => {
@@ -21,7 +26,7 @@ router.get("/", (req, res) => {
 
 // --- Signature check (confirms the request really came from Meta) ---
 function isValidSignature(req) {
-  if (!config.appSecret) return true; // allowed in early dev, see config.js warning
+  if (!config.appSecret) return config.nodeEnv !== "production";
   const signature = req.get("x-hub-signature-256");
   if (!signature) return false;
 
@@ -53,11 +58,32 @@ router.post("/", async (req, res) => {
     for (const event of entry.messaging || []) {
       const eventId = logger.newEventId();
       const startedAt = Date.now();
-      handleEvent(event, eventId)
-        .then(() => logger.info(`evt:${eventId}`, `Handled in ${Date.now() - startedAt}ms`))
-        .catch((err) => logger.error(`evt:${eventId}`, "Failed:", err.message));
+      logger.debug(`evt:${eventId}`, describeEvent(event));
+      const accepted = messageQueue.enqueue(async () => {
+        try {
+          await handleEvent(event, eventId);
+          logger.info(`evt:${eventId}`, `Handled in ${Date.now() - startedAt}ms`);
+        } catch (err) {
+          logger.error(`evt:${eventId}`, "Failed:", err.message);
+        }
+      });
+      if (!accepted) {
+        logger.warn(`evt:${eventId}`, "Dropped: message queue is full or shutting down.");
+      }
     }
   }
 });
 
 module.exports = router;
+module.exports.messageQueue = messageQueue;
+
+function describeEvent(event) {
+  if (event.message?.attachments) return "attachment message";
+  if (event.message?.quick_reply) return "quick reply";
+  if (event.message) return "message";
+  if (event.postback) return "postback";
+  if (event.delivery) return "delivery";
+  if (event.read) return "read";
+  if (event.reaction) return "reaction";
+  return "unknown event";
+}

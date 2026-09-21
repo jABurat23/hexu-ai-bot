@@ -2,6 +2,7 @@
 const config = require("./config");
 const logger = require("./utils/logger");
 const webhookRouter = require("./routes/webhook");
+const { snapshot } = require("./utils/metrics");
 
 const app = express();
 
@@ -186,4 +187,21 @@ app.get("/", (_req, res) => {
 });
 app.use("/webhook", webhookRouter);
 
-app.listen(config.port, () => logger.info("server", `Hexu AI bot listening on port ${config.port}`));
+const server = app.listen(config.port, () =>
+  logger.info("server", `Hexu AI bot listening on port ${config.port}`)
+);
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info("server", `Received ${signal}; stopping new work.`);
+  webhookRouter.messageQueue.stopAccepting();
+  await new Promise((resolve) => server.close(resolve));
+  await webhookRouter.messageQueue.drain(config.shutdownTimeoutMs);
+  logger.info("server", `Shutdown complete. Events handled: ${snapshot().eventsCompleted}`);
+  process.exit(0);
+}
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => shutdown("SIGTERM"));

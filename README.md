@@ -80,12 +80,45 @@ The server starts on `http://localhost:3000`. The root URL displays the premium 
 3. **Verify Token**: Must match your `WEBHOOK_VERIFY_TOKEN` in `.env`.
 4. Subscribe to: `messages` and `messaging_postbacks`.
 
+For production deployments, set `NODE_ENV=production` and provide `APP_SECRET`.
+The application will refuse to start without it because webhook signature
+verification is required outside local development. Run the updated
+`supabase-schema.sql` to create the `processed_messages` table, which prevents
+duplicate Meta deliveries from producing duplicate replies.
+
 ---
 
 ## 🛠️ Adding Features
 
 - **New Command**: Create a new file in `commands/` (e.g., `commands/weather.js`). Export `{ name, description, requiredRole, handler }`. The system will automatically register it and secure it based on `requiredRole`.
 - **New API Integration**: Add your helper logic to the `lib/` directory and import it inside your new command.
+
+Built-in utility commands include `!about`, `!status`, `!history`, and
+`!clearhistory CONFIRM`. `!clearhistory` requires ADMIN access or higher.
+History commands only access the requesting user's messages; clearing history
+does not delete the user's profile or role.
+
+Additional commands include `!uptime`, `!uid`, and the ADMIN-only `!users`
+command. `!menu` is an alias for `!help`; command listings are grouped by
+category and filtered by the caller's role.
+
+Commands can define `aliases`, `category`, `usage`, `requiredRole`, and
+`cooldownSeconds`. Webhook work is processed through a bounded queue configured
+with `QUEUE_MAX_SIZE` and `QUEUE_CONCURRENCY`, and the server drains active
+work during graceful shutdown. Runtime counters are included in `!status`.
+
+Moderation commands include ADMIN-only `!block`, `!unblock`, `!warn`, and
+`!warnings`, plus OWNER-only `!clearwarnings`. Run the expanded
+`supabase-schema.sql` to create the moderation tables and audit log.
+
+Messenger postbacks with `GET_STARTED` or `HELP` open `!help`. A postback
+payload beginning with `CMD:` can safely invoke a command, such as
+`CMD:!status`. Unsupported attachments receive a guidance response, while
+delivery, read, and reaction events are logged without triggering AI work.
+
+`!weather <city>` uses Open-Meteo's geocoding and forecast APIs and does not
+require an additional API key. Requests use `REQUEST_TIMEOUT_MS` and the
+command has a per-user cooldown. `!rules` displays the bot's usage guidance.
 
 ---
 

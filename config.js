@@ -7,6 +7,7 @@ const required = [
   "SUPABASE_SERVICE_ROLE_KEY",
 ];
 
+const nodeEnv = process.env.NODE_ENV || "development";
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) {
   console.error(`Missing required env vars: ${missing.join(", ")}`);
@@ -20,6 +21,11 @@ if (!process.env.ANTHROPIC_API_KEY) {
   );
 }
 
+if (!process.env.APP_SECRET && nodeEnv === "production") {
+  console.error("APP_SECRET is required when NODE_ENV=production.");
+  process.exit(1);
+}
+
 if (!process.env.APP_SECRET) {
   console.warn(
     "APP_SECRET not set — webhook signature verification is DISABLED. Fine for early local testing, not for production."
@@ -30,10 +36,15 @@ module.exports = {
   pageAccessToken: process.env.PAGE_ACCESS_TOKEN,
   webhookVerifyToken: process.env.WEBHOOK_VERIFY_TOKEN,
   appSecret: process.env.APP_SECRET || null,
+  nodeEnv,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   port: process.env.PORT || 3000,
+  requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS) || 10000,
+  queueMaxSize: Number(process.env.QUEUE_MAX_SIZE) || 100,
+  queueConcurrency: Number(process.env.QUEUE_CONCURRENCY) || 3,
+  shutdownTimeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS) || 30000,
   // LOG_LEVEL: debug | info | warn | error (default info — set to debug
   // locally when you need to see every message's text/branch decision).
   logLevel: process.env.LOG_LEVEL || "info",

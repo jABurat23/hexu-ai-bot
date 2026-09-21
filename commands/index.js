@@ -5,14 +5,19 @@
 const fs = require("fs");
 const path = require("path");
 const { hasPermission, getRoleString } = require("../lib/roles");
+const { recordCommand } = require("../utils/metrics");
 
 const PREFIX = "!";
 
 const registry = {};
+const cooldowns = new Map();
 for (const file of fs.readdirSync(__dirname)) {
   if (file === "index.js" || !file.endsWith(".js")) continue;
   const command = require(path.join(__dirname, file));
   registry[command.name] = command;
+  for (const alias of command.aliases || []) {
+    registry[alias] = command;
+  }
 }
 
 /**
@@ -43,7 +48,32 @@ async function runCommand(name, user, args) {
     }
   }
 
-  return command.handler(user, args, registry);
+  const cooldownSeconds = Number(command.cooldownSeconds) || 0;
+  const cooldownKey = `${command.name}:${user.psid}`;
+  const lastRun = cooldowns.get(cooldownKey);
+  if (cooldownSeconds > 0 && lastRun) {
+    const remaining = cooldownSeconds * 1000 - (Date.now() - lastRun);
+    if (remaining > 0) {
+      return `Please wait ${Math.ceil(remaining / 1000)}s before using !${command.name} again.`;
+    }
+  }
+
+  try {
+    const result = await command.handler(user, args, registry);
+    if (cooldownSeconds > 0) cooldowns.set(cooldownKey, Date.now());
+    recordCommand();
+    return result;
+  } catch (error) {
+    recordCommand(true);
+    throw error;
+  }
 }
+
+setInterval(() => {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [key, timestamp] of cooldowns) {
+    if (timestamp < cutoff) cooldowns.delete(key);
+  }
+}, 60 * 1000).unref();
 
 module.exports = { PREFIX, parseCommand, runCommand, registry };

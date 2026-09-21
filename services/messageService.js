@@ -1,9 +1,16 @@
 const { sendText, sendButtonTemplate, sendTypingOn } = require("../lib/messenger");
 const { REACTION_PENDING, REACTION_DONE, REACTION_ERROR, setReaction } = require("../lib/reaction");
 const { getAiReply } = require("../lib/claude");
-const { getOrCreateUser, saveMessage, getRecentHistory } = require("../lib/supabase");
+const {
+  getOrCreateUser,
+  saveMessage,
+  getRecentHistory,
+  claimMessage,
+  getBlockedUser,
+} = require("../lib/supabase");
 const { parseCommand, runCommand } = require("../commands");
 const logger = require("../utils/logger");
+const { recordEvent, recordAi } = require("../utils/metrics");
 
 /**
  * Handles one Messenger "messaging" event: a user's incoming text message.
@@ -11,27 +18,66 @@ const logger = require("../utils/logger");
  * together — grep the logs for "evt:<id>" to see its full path.
  */
 async function handleEvent(event, eventId = logger.newEventId()) {
+  const eventStartedAt = Date.now();
   const scope = `evt:${eventId}`;
   const psid = event.sender?.id;
 
-  if (!psid || !event.message || event.message.is_echo) {
-    logger.debug(scope, "Skipped (no psid, no message body, or echo).");
+  if (!psid) {
+    logger.debug(scope, "Skipped event without a sender.");
+    recordEvent(Date.now() - eventStartedAt);
     return;
   }
 
-  const text = event.message.text;
-  if (!text) {
-    logger.debug(scope, "Skipped (non-text message — attachment/sticker).");
+  if (event.delivery || event.read || event.reaction) {
+    logger.debug(scope, "Received delivery/read/reaction event.");
+    recordEvent(Date.now() - eventStartedAt);
     return;
   }
 
-  // mid = this specific message's id, needed to react to it (distinct
-  // from psid, which identifies the user/conversation).
-  const messageId = event.message.mid;
+  if (event.message?.is_echo) {
+    logger.debug(scope, "Skipped echo event.");
+    recordEvent(Date.now() - eventStartedAt);
+    return;
+  }
 
-  logger.info(scope, `Message from psid=${psid}: "${text}"`);
+  const message = event.message || event.postback;
+  if (!message) {
+    logger.debug(scope, "Skipped unsupported event shape.");
+    recordEvent(Date.now() - eventStartedAt);
+    return;
+  }
+
+  const messageId = event.message?.mid || event.postback?.mid;
 
   const user = await getOrCreateUser(psid);
+  const blocked = await getBlockedUser(psid);
+  if (blocked) {
+    logger.info(scope, `Blocked user ignored: psid=${psid}.`);
+    recordEvent(Date.now() - eventStartedAt);
+    return;
+  }
+
+  if (messageId && !(await claimMessage(messageId, psid))) {
+    logger.info(scope, `Skipped duplicate message mid=${messageId}.`);
+    recordEvent(Date.now() - eventStartedAt);
+    return;
+  }
+
+  if (messageId && !(await claimMessage(messageId, psid))) {
+    logger.info(scope, `Skipped duplicate message mid=${messageId}.`);
+    recordEvent(Date.now() - eventStartedAt);
+    return;
+  }
+
+  const text = getEventText(event);
+  if (!text) {
+    await sendUnsupportedMessage(psid, scope);
+    recordEvent(Date.now() - eventStartedAt);
+    return;
+  }
+
+  logger.info(scope, `Input from psid=${psid}: "${text}"`);
+
   await saveMessage(psid, "user", text);
 
   const { isCommand, name, args } = parseCommand(text);
@@ -39,11 +85,35 @@ async function handleEvent(event, eventId = logger.newEventId()) {
   if (isCommand) {
     logger.debug(scope, `Routed to command "!${name}"${args.length ? ` args=${JSON.stringify(args)}` : ""}`);
     await handleCommand(user, name, args, scope, messageId);
+    recordEvent(Date.now() - eventStartedAt);
     return;
   }
 
   logger.debug(scope, "No command matched — routed to AI fallback.");
   await handleAiFallback(psid, scope);
+  recordEvent(Date.now() - eventStartedAt);
+}
+
+function getEventText(event) {
+  if (event.message?.text) return event.message.text;
+
+  const payload =
+    event.postback?.payload || event.message?.quick_reply?.payload;
+  if (!payload) return null;
+  if (payload === "GET_STARTED" || payload === "HELP") return "!help";
+  if (payload.startsWith("CMD:")) return payload.slice(4).trim();
+  return null;
+}
+
+async function sendUnsupportedMessage(psid, scope) {
+  const reply =
+    "I can currently process text messages and commands. Please send text or type !help.";
+  try {
+    await sendText(psid, reply);
+    logger.debug(scope, "Sent unsupported-message guidance.");
+  } catch (err) {
+    logger.warn(scope, "Failed to send unsupported-message guidance:", err.message);
+  }
 }
 
 async function handleCommand(user, name, args, scope, messageId) {
@@ -95,13 +165,21 @@ async function handleAiFallback(psid, scope) {
   try {
     const history = await getRecentHistory(psid);
     const reply = await getAiReply(history);
+    recordAi();
     await saveMessage(psid, "assistant", reply);
     await sendText(psid, reply);
     logger.debug(scope, `AI replied (${reply.length} chars).`);
   } catch (err) {
-    // Most common cause: ANTHROPIC_API_KEY not set yet. Log and stay quiet
-    // rather than send the user an error message.
+    recordAi(true);
     logger.warn(scope, "AI fallback skipped:", err.message);
+    const fallback =
+      "I’m temporarily unable to answer right now. Please try again in a moment.";
+    try {
+      await saveMessage(psid, "assistant", fallback);
+      await sendText(psid, fallback);
+    } catch (fallbackErr) {
+      logger.error(scope, "Failed to send AI fallback message:", fallbackErr.message);
+    }
   }
 }
 

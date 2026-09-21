@@ -17,6 +17,9 @@ async function timeIt(promiseFactory) {
 
 module.exports = {
   name: "ping",
+  category: "System",
+  usage: "!ping",
+  cooldownSeconds: 5,
   description: "Check the bot's status and response latency.",
   handler: async (user) => {
     // Piggyback on the typing indicator as a real round-trip to the
