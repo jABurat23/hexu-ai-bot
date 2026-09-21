@@ -1,4 +1,5 @@
 const { sendText, sendButtonTemplate, sendTypingOn } = require("../lib/messenger");
+const { REACTION_PENDING, REACTION_DONE, REACTION_ERROR, setReaction } = require("../lib/reaction");
 const { getAiReply } = require("../lib/claude");
 const { getOrCreateUser, saveMessage, getRecentHistory } = require("../lib/supabase");
 const { parseCommand, runCommand } = require("../commands");
@@ -24,6 +25,10 @@ async function handleEvent(event, eventId = logger.newEventId()) {
     return;
   }
 
+  // mid = this specific message's id, needed to react to it (distinct
+  // from psid, which identifies the user/conversation).
+  const messageId = event.message.mid;
+
   logger.info(scope, `Message from psid=${psid}: "${text}"`);
 
   await getOrCreateUser(psid);
@@ -33,7 +38,7 @@ async function handleEvent(event, eventId = logger.newEventId()) {
 
   if (isCommand) {
     logger.debug(scope, `Routed to command "!${name}"${args.length ? ` args=${JSON.stringify(args)}` : ""}`);
-    await handleCommand(psid, name, args, scope);
+    await handleCommand(psid, name, args, scope, messageId);
     return;
   }
 
@@ -41,37 +46,46 @@ async function handleEvent(event, eventId = logger.newEventId()) {
   await handleAiFallback(psid, scope);
 }
 
-async function handleCommand(psid, name, args, scope) {
-  const result = await runCommand(name, psid, args);
+async function handleCommand(psid, name, args, scope, messageId) {
+  setReaction(psid, messageId, REACTION_PENDING, scope);
 
-  if (result == null) {
-    logger.warn(scope, `Unknown command "!${name}".`);
-    const reply = `Unknown command: ${name}. Try !help.`;
-    await saveMessage(psid, "assistant", reply);
-    await sendText(psid, reply);
-    return;
-  }
+  try {
+    const result = await runCommand(name, psid, args);
 
-  // A command returns either a plain string (sent as normal text) or a
-  // rich reply object like { type: "button_template", text, buttons }
-  // (see commands/help.js) for messages that need tappable buttons.
-  if (typeof result === "string") {
-    await saveMessage(psid, "assistant", result);
-    await sendText(psid, result);
-    logger.debug(scope, `Replied to "!${name}" (text, ${result.length} chars).`);
-    return;
-  }
+    if (result == null) {
+      logger.warn(scope, `Unknown command "!${name}".`);
+      const reply = `Unknown command: ${name}. Try !help.`;
+      await saveMessage(psid, "assistant", reply);
+      await sendText(psid, reply);
+      setReaction(psid, messageId, REACTION_DONE, scope);
+      return;
+    }
 
-  await saveMessage(psid, "assistant", result.text);
-  if (result.type === "button_template") {
-    await sendButtonTemplate(psid, result.text, result.buttons);
-    logger.debug(
-      scope,
-      `Replied to "!${name}" (button_template, ${result.buttons.length} button(s)).`
-    );
-  } else {
-    await sendText(psid, result.text);
-    logger.debug(scope, `Replied to "!${name}" (text).`);
+    // A command returns either a plain string (sent as normal text) or a
+    // rich reply object like { type: "button_template", text, buttons }
+    // (see commands/help.js) for messages that need tappable buttons.
+    if (typeof result === "string") {
+      await saveMessage(psid, "assistant", result);
+      await sendText(psid, result);
+      logger.debug(scope, `Replied to "!${name}" (text, ${result.length} chars).`);
+    } else {
+      await saveMessage(psid, "assistant", result.text);
+      if (result.type === "button_template") {
+        await sendButtonTemplate(psid, result.text, result.buttons);
+        logger.debug(
+          scope,
+          `Replied to "!${name}" (button_template, ${result.buttons.length} button(s)).`
+        );
+      } else {
+        await sendText(psid, result.text);
+        logger.debug(scope, `Replied to "!${name}" (text).`);
+      }
+    }
+
+    setReaction(psid, messageId, REACTION_DONE, scope);
+  } catch (err) {
+    setReaction(psid, messageId, REACTION_ERROR, scope);
+    throw err;
   }
 }
 
