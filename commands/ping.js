@@ -18,10 +18,10 @@ async function timeIt(promiseFactory) {
 module.exports = {
   name: "ping",
   description: "Check the bot's status and response latency.",
-  handler: async (psid) => {
+  handler: async (user) => {
     // Piggyback on the typing indicator as a real round-trip to the
     // Messenger Graph API — costs nothing extra, gives a genuine latency.
-    const api = await timeIt(() => sendTypingOn(psid));
+    const api = await timeIt(() => sendTypingOn(user.psid));
 
     // A trivial query against Supabase to check DB connectivity/latency.
     const db = await timeIt(() =>

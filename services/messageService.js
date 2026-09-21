@@ -31,14 +31,14 @@ async function handleEvent(event, eventId = logger.newEventId()) {
 
   logger.info(scope, `Message from psid=${psid}: "${text}"`);
 
-  await getOrCreateUser(psid);
+  const user = await getOrCreateUser(psid);
   await saveMessage(psid, "user", text);
 
   const { isCommand, name, args } = parseCommand(text);
 
   if (isCommand) {
     logger.debug(scope, `Routed to command "!${name}"${args.length ? ` args=${JSON.stringify(args)}` : ""}`);
-    await handleCommand(psid, name, args, scope, messageId);
+    await handleCommand(user, name, args, scope, messageId);
     return;
   }
 
@@ -46,11 +46,12 @@ async function handleEvent(event, eventId = logger.newEventId()) {
   await handleAiFallback(psid, scope);
 }
 
-async function handleCommand(psid, name, args, scope, messageId) {
+async function handleCommand(user, name, args, scope, messageId) {
+  const psid = user.psid;
   setReaction(psid, messageId, REACTION_PENDING, scope);
 
   try {
-    const result = await runCommand(name, psid, args);
+    const result = await runCommand(name, user, args);
 
     if (result == null) {
       logger.warn(scope, `Unknown command "!${name}".`);

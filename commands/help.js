@@ -1,21 +1,14 @@
-const PAGE_SIZE = 6;
 const OWNER_GITHUB_USERNAME = "jABurat23";
+const { ROLES, hasPermission, getRoleString } = require("../lib/roles");
 
 module.exports = {
   name: "help",
-  description: "List all available commands, or !help <command> for details on one.",
-  // The bridge (commands/index.js) passes the full registry in as the 3rd
-  // arg, so this command can list every other command without importing
-  // them directly. Usage:
-  //   !help            -> page 1 of the full list
-  //   !help 2          -> page 2 of the full list
-  //   !help <command>  -> details on one specific command
-  handler: async (_psid, args, registry) => {
+  description: "List all available commands grouped by role, or !help <command> for details.",
+  handler: async (user, args, registry) => {
     const query = args[0];
 
-    // A non-numeric arg is treated as a command name to look up, e.g.
-    // "!help ping" or "!help !ping" (leading "!" is optional).
-    if (query && !/^\d+$/.test(query)) {
+    // Details on a specific command
+    if (query) {
       const name = query.replace(/^!/, "").toLowerCase();
       const command = registry[name];
 
@@ -28,42 +21,72 @@ module.exports = {
         ].join("\n");
       }
 
+      // Check if user has permission to view this command
+      const reqRole = command.requiredRole || "USER";
+      if (!hasPermission(user.access_role, reqRole)) {
+        return [
+          "╭── ACCESS DENIED ──⭓",
+          `│ You do not have permission to view "!${name}".`,
+          "╰────────⭓",
+        ].join("\n");
+      }
+
       return [
         "╭── NAME ──⭓",
         `│ !${command.name}`,
         "├── INFO ──⭔",
         `│ Description: ${command.description || "No description available."}`,
+        `│ Required Role: ${getRoleString(reqRole)}`,
         `│ Usage: !${command.name}`,
         "╰────────⭓",
       ].join("\n");
     }
 
+    // List all commands grouped by role
     const all = Object.values(registry).sort((a, b) => a.name.localeCompare(b.name));
-    const totalPages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
-
-    let page = parseInt(query, 10);
-    if (!Number.isInteger(page) || page < 1) page = 1;
-    if (page > totalPages) page = totalPages;
-
-    const start = (page - 1) * PAGE_SIZE;
-    const pageCommands = all.slice(start, start + PAGE_SIZE);
+    
+    // Group commands based on required role
+    const grouped = {};
+    for (const roleKey of Object.keys(ROLES)) {
+      grouped[roleKey] = [];
+    }
+    
+    for (const c of all) {
+      const reqRole = c.requiredRole || "USER";
+      // Only show commands the user has permission to see
+      if (hasPermission(user.access_role, reqRole)) {
+        grouped[reqRole].push(c);
+      }
+    }
 
     const header = [
       "╭─────────────⭓",
       "│ 『 HEXU AI COMMANDS 』",
-      "├─────⭔",
-      `│ Page [ ${page}/${totalPages} ]`,
-      `│ Hexu AI currently has ${all.length} command${all.length === 1 ? "" : "s"}`,
-      "│ » Type !help <page> to view more commands",
-      "│ » Type !help <command> for details on one",
       "├────────⭔",
+      "│ » Type !help <command> for details",
     ];
 
-    const body = pageCommands.map(
-      (c) => `│ ⮑ !${c.name} — ${c.description || "No description."}`
-    );
+    const body = [];
+    
+    // Sort roles by level descending so OWNER commands are at the top (if they can see them)
+    const sortedRoles = Object.values(ROLES).sort((a, b) => b.level - a.level);
+    
+    for (const role of sortedRoles) {
+      const commands = grouped[role.name];
+      if (commands && commands.length > 0) {
+        body.push("├─────⭔");
+        body.push(`│ ${role.emoji} ${role.name} COMMANDS`);
+        for (const c of commands) {
+          body.push(`│ ⮑ !${c.name} — ${c.description || "No description."}`);
+        }
+      }
+    }
 
-    const footer = [`│ Owner: ${OWNER_GITHUB_USERNAME}`, "╰─────────────⭓"];
+    const footer = [
+      "├─────⭔",
+      `│ Owner: ${OWNER_GITHUB_USERNAME}`, 
+      "╰─────────────⭓"
+    ];
 
     return [...header, ...body, ...footer].join("\n");
   },

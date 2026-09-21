@@ -4,6 +4,7 @@
 // the shape) and it'll be picked up automatically.
 const fs = require("fs");
 const path = require("path");
+const { hasPermission, getRoleString } = require("../lib/roles");
 
 const PREFIX = "!";
 
@@ -27,10 +28,22 @@ function parseCommand(text) {
  * Runs a command if it exists. Returns null if the command name is unknown
  * (caller decides how to handle that — currently: reply with an error).
  */
-async function runCommand(name, psid, args) {
+async function runCommand(name, user, args) {
   const command = registry[name];
   if (!command) return null;
-  return command.handler(psid, args, registry);
+
+  if (command.requiredRole) {
+    if (!hasPermission(user.access_role, command.requiredRole)) {
+      return [
+        "╭── ACCESS DENIED ──⭓",
+        `│ This command requires ${getRoleString(command.requiredRole)} access.`,
+        `│ Your current role is ${getRoleString(user.access_role)}.`,
+        "╰────────⭓",
+      ].join("\n");
+    }
+  }
+
+  return command.handler(user, args, registry);
 }
 
 module.exports = { PREFIX, parseCommand, runCommand, registry };

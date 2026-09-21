@@ -39,4 +39,5 @@ module.exports = {
   logLevel: process.env.LOG_LEVEL || "info",
   // Set LOG_COLOR=false if your log viewer doesn't render ANSI colors well.
   logColor: process.env.LOG_COLOR !== "false",
+  ownerPsid: process.env.OWNER_PSID || null,
 };

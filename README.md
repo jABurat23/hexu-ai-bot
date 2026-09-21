@@ -1,114 +1,96 @@
-# Hexu AI — Messenger Bot
+# 🤖 Hexu AI — Messenger Bot
 
-## About
+<div align="center">
+  <img src="public/logo.png" width="150" height="150" alt="Hexu AI Logo" />
+  <p><strong>An Intelligent, Role-Based Facebook Messenger Chatbot</strong></p>
+</div>
 
-**Hexu AI** is a Facebook Messenger chatbot for the Hexu AI Page. It responds
-to `!`-prefixed text commands (e.g. `!ping`, `!help`), falls back to a
-Claude-powered AI reply for anything else once an Anthropic key is added,
-and keeps per-user conversation history in Supabase. It's built as a small
-Node/Express app deployed on Render, with each command living in its own
-file so new ones are easy to add without touching existing code.
+---
 
-## Table of Contents
+## 📖 About
 
-- [About](#about)
-- [Project Structure](#project-structure)
-- [Setup](#setup)
-  - [1. Supabase](#1-supabase)
-  - [2. Local Setup](#2-local-setup)
-  - [3. Deploy to Render](#3-deploy-to-render)
-  - [4. Finish the Meta Webhook Setup](#4-finish-the-meta-webhook-setup)
-- [Adding Features](#adding-features)
-- [Contributing](#contributing)
+**Hexu AI** is a Facebook Messenger chatbot designed for the Hexu AI Page. It is built as a modular Node/Express application backed by Supabase and Anthropic's Claude.
 
-## Project Structure
+### Key Features
+- **🤖 AI Fallback**: If a user sends a normal message, the bot remembers the last 20 messages (via Supabase) and generates a smart reply using Claude.
+- **⚡ Command System**: Responds to `!`-prefixed text commands (e.g. `!ping`, `!help`). Each command lives in its own file in `commands/`, automatically loaded on startup!
+- **🛡️ Role-Based Access Control (RBAC)**: Supports four permission tiers (👑 `OWNER`, 💻 `DEVELOPER`, 🛡️ `ADMIN`, 👤 `USER`), allowing you to secure powerful commands.
+- **✨ Premium Landing Page**: A beautifully designed, glassmorphic landing page served on the root endpoint.
 
+---
+
+## 📂 Project Structure
+
+```text
+├── index.js                  # App bootstrap: Express server, static files, and routes
+├── config.js                 # Centralized environment variable validation
+├── routes/
+│   └── webhook.js            # GET verification & POST signature check for Meta
+├── services/
+│   └── messageService.js     # Core logic: parses commands vs AI fallback
+├── lib/
+│   ├── claude.js             # Claude API wrapper for AI fallback replies
+│   ├── messenger.js          # Meta Send API wrapper (text, buttons, typing)
+│   ├── reactions.js          # Reaction helper (⏳ pending / ✅ done / ❌ error)
+│   ├── roles.js              # RBAC logic, hierarchy, and emojis
+│   └── supabase.js           # User, message history, and role management
+├── commands/
+│   ├── index.js              # Auto-loads and executes commands based on role
+│   ├── help.js               # Lists all commands grouped by role
+│   ├── ping.js               # Checks bot latency and DB connection
+│   ├── profile.js            # Displays user PSID and role
+│   └── setrole.js            # 👑 OWNER ONLY: Promote/demote users
+├── public/
+│   └── logo.png              # The bot's logo for the landing page
+├── supabase-schema.sql       # SQL table definitions
+└── .env.example              # Example environment variables
 ```
-index.js                    App bootstrap: creates the Express app, mounts routes, listens
-config.js                    Reads + validates env vars in one place; exits with a clear
-                              error if something required is missing
-routes/webhook.js            GET verification + POST signature check, then hands off
-                              each event to the message service
-services/messageService.js   The actual "what happens when a message arrives" logic:
-                              command vs. AI fallback, plus command reactions
-lib/messenger.js             Send API wrapper (text, button templates, typing, reactions)
-lib/reactions.js              Reaction helper (⏳ pending / ✅ done / ❌ error on commands)
-lib/claude.js                 Claude API wrapper for AI fallback replies
-lib/supabase.js               User + message history storage
-commands/index.js             The bridge — auto-loads every command file in this folder,
-                              has no command logic of its own
-commands/ping.js               Example command: bot status + API/DB latency
-commands/help.js               Example command: lists all commands, or details on one
-utils/logger.js                Timestamped, color-coded logger with per-message trace IDs
-supabase-schema.sql            Tables to create in Supabase
-.env.example                    Env vars you need (copy to .env for local dev)
-.gitignore                      Keeps node_modules/ and .env out of git
-```
 
-## Setup
+---
 
-### 1. Supabase
+## 🚀 Setup & Installation
 
-1. Open your Supabase project (new one, or the existing Classboard project).
-2. Go to SQL Editor, paste the contents of `supabase-schema.sql`, run it.
-3. Grab your `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from
-   Project Settings → API. Use the **service role** key (not the anon key)
-   since this server runs with full trust, not per-user auth.
+### 1. Supabase Database
+1. Create a new Supabase project (or use an existing one).
+2. Go to the **SQL Editor**, paste the contents of `supabase-schema.sql`, and run it to create the `users` and `messages` tables.
+3. Grab your `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from Project Settings → API.
 
 ### 2. Local Setup
-
 ```bash
 npm install
 cp .env.example .env
-# fill in .env with your real values
+```
+Fill in the `.env` file with your actual keys. Be sure to set `OWNER_PSID` to your own Messenger ID so you automatically receive 👑 OWNER privileges on your first message!
+
+```bash
 npm run dev
 ```
+The server starts on `http://localhost:3000`. The root URL displays the premium landing page.
 
-The server starts on `http://localhost:3000`. `GET /` should return
-"Hexu AI bot is running."
-
-To test the webhook locally before deploying, you can tunnel it with a tool
-like `ngrok http 3000` and use the ngrok URL as your webhook Callback URL —
-optional, but handy for fast iteration.
-
-### 3. Deploy to Render
-
+### 3. Deploying (Render)
 1. Push this project to a GitHub repo.
-2. On Render: New → Web Service → connect the repo.
-3. Build command: `npm install`
-4. Start command: `npm start`
-5. Add all the variables from `.env.example` under Render's Environment tab
-   (use your real values, not the placeholders).
-6. Deploy. Once live, your webhook URL is:
-   `https://<your-render-service>.onrender.com/webhook`
+2. On Render: **New → Web Service** and connect the repo.
+3. Build command: `npm install` | Start command: `npm start`
+4. Add all variables from your `.env` to Render's Environment tab.
+5. Deploy! Your webhook URL will be `https://<your-render-service>.onrender.com/webhook`
 
-### 4. Finish the Meta Webhook Setup
+### 4. Meta Webhook Configuration
+1. Go to **Meta for Developers → Messenger → Settings → Webhooks**.
+2. **Callback URL**: The Render URL from Step 3.
+3. **Verify Token**: Must match your `WEBHOOK_VERIFY_TOKEN` in `.env`.
+4. Subscribe to: `messages` and `messaging_postbacks`.
 
-Back in Meta for Developers → Messenger → Settings → Webhooks:
+---
 
-1. Callback URL: the Render URL from step 3 above.
-2. Verify Token: whatever you put in `WEBHOOK_VERIFY_TOKEN`.
-3. Subscribe to: `messages`, `messaging_postbacks`.
-4. Save — Meta will hit your live `/webhook` GET endpoint to confirm.
+## 🛠️ Adding Features
 
-Then message the Hexu AI Page from Messenger and you should get a reply.
+- **New Command**: Create a new file in `commands/` (e.g., `commands/weather.js`). Export `{ name, description, requiredRole, handler }`. The system will automatically register it and secure it based on `requiredRole`.
+- **New API Integration**: Add your helper logic to the `lib/` directory and import it inside your new command.
 
-## Adding Features
+---
 
-- **New command**: create a new file in `commands/` exporting
-  `{ name, description, handler }` (see `commands/ping.js` for the
-  shortest example). `commands/index.js` picks it up automatically —
-  nothing else to touch.
-- **New API integration**: write a helper (e.g. `lib/weather.js`), call it
-  from inside a command handler.
-- **Quick replies / persistent menu**: extend `lib/messenger.js` with a
-  `sendQuickReplies()` helper once you're ready — the Send API supports a
-  `quick_replies` array alongside `message.text`.
+## 🤝 Contributing
 
-## Contributing
-
-Want to help maintain or build out Hexu AI? Contributions are welcome:
-
+Contributions are always welcome! 
 - Open a **pull request** with your change.
-- Or reach out directly at **kisakitetta852@gmail.com** if you'd like to
-  get involved as a developer/maintainer.
+- Or reach out directly at **kisakitetta852@gmail.com** if you'd like to get involved as a developer or maintainer.

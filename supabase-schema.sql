@@ -4,6 +4,7 @@
 
 create table if not exists users (
   psid text primary key,
+  access_role text not null default 'USER',
   created_at timestamptz not null default now()
 );
 
