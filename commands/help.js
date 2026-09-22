@@ -23,7 +23,7 @@ function chunk(array, size) {
  * category that spans two pages still gets its header repeated on both.
  */
 function buildOrderedEntries(userRole) {
-  const sortedRoles = Object.values(ROLES).sort((a, b) => b.level - a.level);
+  const sortedRoles = Object.values(ROLES).sort((a, b) => a.level - b.level);
   const commands = commandLoader.getCommandsByRole(userRole);
   const entries = [];
 
@@ -73,9 +73,9 @@ function renderPage(title, lines, page, totalPages, totalCount) {
     "╭─────────────⭓",
     `│ 『 ${title} 』`,
     "├────────⭔",
-    "│ » Type !help <command> for details",
-    "│ » Type !help <category> to filter",
-    totalPages > 1 ? `│ » Type !help <page> — ${totalPages} pages total` : null,
+    "│ » Details: !help <command>",
+    "│ » Filter: !help <category>",
+    totalPages > 1 ? `│ » More: !help <page> (${totalPages} pages)` : null,
   ].filter(Boolean);
 
   const body = lines.map((l) => `│ ${l}`);
