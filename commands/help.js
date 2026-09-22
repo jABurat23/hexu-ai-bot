@@ -2,47 +2,37 @@ const OWNER_GITHUB_USERNAME = "jABurat23";
 const { ROLES, hasPermission, getRoleString } = require("../lib/roles");
 const commandLoader = require("../lib/commandLoader");
 
-// Keep each page's body comfortably under Messenger's 2000-char text
-// limit, leaving room for the header/footer wrapped around it.
-const MAX_BODY_CHARS_PER_PAGE = 1400;
+// Strict count, not a character budget — every page shows at most this
+// many commands, however short or long their descriptions are.
+const COMMANDS_PER_PAGE = 6;
 
-/**
- * Packs `lines` into pages, never letting a page's total length exceed
- * maxChars. A single line longer than maxChars still gets its own page
- * rather than being dropped or split mid-line.
- */
-function paginateLines(lines, maxChars) {
-  const pages = [[]];
-  let currentLen = 0;
-  for (const line of lines) {
-    const lineLen = line.length + 1; // +1 for the newline that'll join it
-    const page = pages[pages.length - 1];
-    if (currentLen + lineLen > maxChars && page.length > 0) {
-      pages.push([line]);
-      currentLen = lineLen;
-    } else {
-      page.push(line);
-      currentLen += lineLen;
-    }
+/** Splits an array into chunks of `size`, in order. */
+function chunk(array, size) {
+  const chunks = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
   }
-  return pages;
+  return chunks.length ? chunks : [[]];
 }
 
-/** Builds the flat "role header / category header / command" line list. */
-function buildFullListingLines(userRole) {
-  const grouped = {};
-  for (const roleKey of Object.keys(ROLES)) grouped[roleKey] = [];
-  for (const c of commandLoader.getCommandsByRole(userRole)) {
-    grouped[c.requiredRole || "USER"].push(c);
-  }
-
-  const lines = [];
+/**
+ * Flat, ordered (role desc, then category, then name) list of
+ * { role, category, command } for every command a role can see. This is
+ * what gets chunked into pages — headers are re-derived per page from
+ * whichever role/category each page's commands actually belong to, so a
+ * category that spans two pages still gets its header repeated on both.
+ */
+function buildOrderedEntries(userRole) {
   const sortedRoles = Object.values(ROLES).sort((a, b) => b.level - a.level);
-  for (const role of sortedRoles) {
-    const roleCommands = grouped[role.name];
-    if (!roleCommands || roleCommands.length === 0) continue;
+  const commands = commandLoader.getCommandsByRole(userRole);
+  const entries = [];
 
-    lines.push(`${role.emoji} ${role.name} COMMANDS`);
+  for (const role of sortedRoles) {
+    const roleCommands = commands
+      .filter((c) => (c.requiredRole || "USER") === role.name)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (!roleCommands.length) continue;
+
     const byCategory = {};
     for (const c of roleCommands) {
       const category = c.category || "General";
@@ -50,19 +40,32 @@ function buildFullListingLines(userRole) {
       byCategory[category].push(c);
     }
     for (const [category, cmds] of Object.entries(byCategory)) {
-      lines.push(`${category}:`);
-      for (const c of cmds) {
-        lines.push(`⮑ !${c.name} — ${c.description || "No description."}`);
-      }
+      for (const command of cmds) entries.push({ role, category, command });
     }
   }
-  return lines;
+  return entries;
 }
 
-/** Same idea, scoped to a single category. */
-function buildCategoryLines(userRole, category) {
-  const commands = commandLoader.getCategories(userRole)[category] || [];
-  return commands.map((c) => `⮑ !${c.name} — ${c.description || "No description."}`);
+/** Renders one page's worth of entries, reprinting a header whenever the
+ * role or category changes from the previous line on this page. */
+function renderEntryLines(entries) {
+  const lines = [];
+  let lastRole = null;
+  let lastCategory = null;
+
+  for (const { role, category, command } of entries) {
+    if (role.name !== lastRole) {
+      lines.push(`${role.emoji} ${role.name} COMMANDS`);
+      lastRole = role.name;
+      lastCategory = null; // force the category header to reprint too
+    }
+    if (category !== lastCategory) {
+      lines.push(`${category}:`);
+      lastCategory = category;
+    }
+    lines.push(`⮑ !${command.name} — ${command.description || "No description."}`);
+  }
+  return lines;
 }
 
 function renderPage(title, lines, page, totalPages, totalCount) {
@@ -87,6 +90,13 @@ function renderPage(title, lines, page, totalPages, totalCount) {
   return [...header, ...body, ...footer].join("\n");
 }
 
+function clampPage(requested, totalPages) {
+  let page = parseInt(requested, 10);
+  if (!Number.isInteger(page) || page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+  return page;
+}
+
 module.exports = {
   name: "help",
   aliases: ["menu"],
@@ -106,18 +116,21 @@ module.exports = {
       );
 
       if (categoryMatch) {
-        const lines = buildCategoryLines(user.access_role, categoryMatch);
-        const pages = paginateLines(lines, MAX_BODY_CHARS_PER_PAGE);
-        let page = parseInt(args[1], 10);
-        if (!Number.isInteger(page) || page < 1) page = 1;
-        if (page > pages.length) page = pages.length;
+        const sorted = [...categories[categoryMatch]].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        );
+        const pages = chunk(sorted, COMMANDS_PER_PAGE);
+        const page = clampPage(args[1], pages.length);
+        const lines = pages[page - 1].map(
+          (c) => `⮑ !${c.name} — ${c.description || "No description."}`
+        );
 
         return renderPage(
           `${categoryMatch.toUpperCase()} COMMANDS`,
-          pages[page - 1],
+          lines,
           page,
           pages.length,
-          lines.length
+          sorted.length
         );
       }
 
@@ -160,13 +173,11 @@ module.exports = {
     }
 
     // --- !help [page] ---
-    const lines = buildFullListingLines(user.access_role);
-    const pages = paginateLines(lines, MAX_BODY_CHARS_PER_PAGE);
-    let page = parseInt(query, 10);
-    if (!Number.isInteger(page) || page < 1) page = 1;
-    if (page > pages.length) page = pages.length;
+    const entries = buildOrderedEntries(user.access_role);
+    const pages = chunk(entries, COMMANDS_PER_PAGE);
+    const page = clampPage(query, pages.length);
+    const lines = renderEntryLines(pages[page - 1]);
 
-    const totalCommands = commandLoader.getCommandsByRole(user.access_role).length;
-    return renderPage("HEXU AI COMMANDS", pages[page - 1], page, pages.length, totalCommands);
+    return renderPage("HEXU AI COMMANDS", lines, page, pages.length, entries.length);
   },
 };
