@@ -1,24 +1,28 @@
-// This file is only a bridge: it loads every command file in this folder
-// and connects them to the message service. It has no command logic of its
-// own — to add a command, create a new file here (see ping.js / help.js for
-// the shape) and it'll be picked up automatically.
-const fs = require("fs");
-const path = require("path");
+// This file is only a bridge: command discovery, caching, and hot-reload
+// all live in lib/commandLoader.js. This file just exposes the same
+// PREFIX / parseCommand / runCommand / registry API as before, so nothing
+// that already imports from "../commands" needs to change.
+const commandLoader = require("../lib/commandLoader");
 const { hasPermission, getRoleString } = require("../lib/roles");
 const { recordCommand } = require("../utils/metrics");
 
 const PREFIX = "!";
-
-const registry = {};
 const cooldowns = new Map();
-for (const file of fs.readdirSync(__dirname)) {
-  if (file === "index.js" || !file.endsWith(".js")) continue;
-  const command = require(path.join(__dirname, file));
-  registry[command.name] = command;
-  for (const alias of command.aliases || []) {
-    registry[alias] = command;
+
+// `registry` stays a live view onto the loader's current command map (via
+// a Proxy) rather than a one-time snapshot, so code that destructured
+// `{ registry }` at require-time still sees commands added or changed by
+// a later !reload, instead of a stale copy from startup.
+const registry = new Proxy(
+  {},
+  {
+    get: (_target, prop) => commandLoader.getRegistry()[prop],
+    has: (_target, prop) => prop in commandLoader.getRegistry(),
+    ownKeys: () => Reflect.ownKeys(commandLoader.getRegistry()),
+    getOwnPropertyDescriptor: (_target, prop) =>
+      Object.getOwnPropertyDescriptor(commandLoader.getRegistry(), prop),
   }
-}
+);
 
 /**
  * Returns { isCommand, name, args } for a given raw message text.
@@ -34,7 +38,7 @@ function parseCommand(text) {
  * (caller decides how to handle that — currently: reply with an error).
  */
 async function runCommand(name, user, args) {
-  const command = registry[name];
+  const command = commandLoader.getCommand(name);
   if (!command) return null;
 
   if (command.requiredRole) {
@@ -76,4 +80,12 @@ setInterval(() => {
   }
 }, 60 * 1000).unref();
 
-module.exports = { PREFIX, parseCommand, runCommand, registry };
+module.exports = {
+  PREFIX,
+  parseCommand,
+  runCommand,
+  registry,
+  // New: exposed for the !reload admin command and for metrics/debugging.
+  reloadCommands: commandLoader.reloadCommands,
+  commandLoader,
+};

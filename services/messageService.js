@@ -63,12 +63,6 @@ async function handleEvent(event, eventId = logger.newEventId()) {
     return;
   }
 
-  if (messageId && !(await claimMessage(messageId, psid))) {
-    logger.info(scope, `Skipped duplicate message mid=${messageId}.`);
-    recordEvent(Date.now() - eventStartedAt);
-    return;
-  }
-
   const text = getEventText(event);
   if (!text) {
     await sendUnsupportedMessage(psid, scope);
