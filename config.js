@@ -51,4 +51,14 @@ module.exports = {
   // Set LOG_COLOR=false if your log viewer doesn't render ANSI colors well.
   logColor: process.env.LOG_COLOR !== "false",
   ownerPsid: process.env.OWNER_PSID || null,
+  // Keep-alive: periodic self-ping to avoid Render free-tier spin-down.
+  // RENDER_EXTERNAL_URL is set automatically by Render for every web
+  // service — EXTERNAL_URL is a manual override for other hosts.
+  keepAliveEnabled: process.env.KEEP_ALIVE !== "false",
+  keepAliveIntervalMs: Number(process.env.KEEP_ALIVE_INTERVAL_MS) || 10 * 60 * 1000,
+  externalUrl: process.env.RENDER_EXTERNAL_URL || process.env.EXTERNAL_URL || null,
+  // Optional: if set, /dashboard requires ?token=<this value>. If unset,
+  // the dashboard is open to anyone with the URL — fine for a private
+  // bot, worth setting once the URL might leak anywhere public.
+  dashboardToken: process.env.DASHBOARD_TOKEN || null,
 };
