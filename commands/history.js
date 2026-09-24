@@ -1,4 +1,4 @@
-const { getRecentHistory } = require("../lib/supabase");
+const { getRecentAiHistory } = require("../lib/supabase");
 
 const MAX_DISPLAY = 5;
 const MAX_CONTENT_LENGTH = 180;
@@ -12,16 +12,16 @@ module.exports = {
   category: "User",
   usage: "!history [1-5]",
   cooldownSeconds: 3,
-  description: "View your five most recent saved messages.",
+  description: "View your five most recent !ai exchanges.",
   handler: async (user, args) => {
     const requestedLimit = args[0] ? Number(args[0]) : MAX_DISPLAY;
     const limit = Number.isInteger(requestedLimit)
       ? Math.min(Math.max(requestedLimit, 1), MAX_DISPLAY)
       : MAX_DISPLAY;
-    const history = await getRecentHistory(user.psid, limit);
+    const history = await getRecentAiHistory(user.psid, limit);
 
     if (!history.length) {
-      return "No conversation history is saved yet.";
+      return "No !ai conversation history is saved yet.";
     }
 
     const lines = ["╭── RECENT HISTORY ──⭓"];

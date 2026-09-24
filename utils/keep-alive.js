@@ -18,15 +18,29 @@ const logger = require("./logger");
 
 let intervalHandle = null;
 
-async function pingSelf(url) {
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 2000;
+
+async function pingSelf(url, attempt = 1) {
   const startedAt = Date.now();
   try {
     await axios.get(url, { timeout: 10_000 });
-    logger.debug("keepAlive", `Self-ping ok (${Date.now() - startedAt}ms).`);
+    logger.debug(
+      "keepAlive",
+      `Self-ping ok (${Date.now() - startedAt}ms)${attempt > 1 ? ` after ${attempt} attempt(s)` : ""}.`
+    );
   } catch (err) {
-    // A failed ping isn't fatal — just means this cycle didn't reset the
-    // idle timer. Log and let the next interval try again.
-    logger.warn("keepAlive", "Self-ping failed:", err.message);
+    if (attempt < MAX_ATTEMPTS) {
+      logger.debug(
+        "keepAlive",
+        `Self-ping attempt ${attempt} failed (${err.message}) — retrying in ${RETRY_DELAY_MS}ms.`
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      return pingSelf(url, attempt + 1);
+    }
+    // Not fatal — just means this cycle didn't reset the idle timer. The
+    // next scheduled interval will try again from attempt 1.
+    logger.warn("keepAlive", `Self-ping failed after ${attempt} attempt(s):`, err.message);
   }
 }
 

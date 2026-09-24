@@ -19,6 +19,13 @@ create table if not exists messages (
 create index if not exists messages_psid_created_at_idx
   on messages (psid, created_at desc);
 
+-- Migration: tags rows saved via the !ai command so they can be queried
+-- separately from the generic message log. Existing rows get NULL, which
+-- is treated as "not an AI message" — no backfill needed.
+alter table messages add column if not exists source text;
+create index if not exists messages_psid_source_created_at_idx
+  on messages (psid, source, created_at desc);
+
 create table if not exists processed_messages (
   message_id text primary key,
   psid text not null references users(psid) on delete cascade,

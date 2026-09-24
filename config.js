@@ -15,9 +15,9 @@ if (missing.length) {
   process.exit(1);
 }
 
-if (!process.env.ANTHROPIC_API_KEY) {
+if (!process.env.GEMINI_API_KEY) {
   console.warn(
-    "ANTHROPIC_API_KEY not set — commands will work, but the AI fallback reply will fail silently until it's added."
+    "GEMINI_API_KEY not set — commands will work, but !ai will fail until it's added."
   );
 }
 
@@ -37,7 +37,10 @@ module.exports = {
   webhookVerifyToken: process.env.WEBHOOK_VERIFY_TOKEN,
   appSecret: process.env.APP_SECRET || null,
   nodeEnv,
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY || null,
+  geminiApiKey: process.env.GEMINI_API_KEY || null,
+  geminiSystemPrompt:
+    process.env.GEMINI_SYSTEM_PROMPT ||
+    "You are Hexu AI, a friendly, concise assistant chatting over Facebook Messenger. Keep replies short and conversational.",
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   port: process.env.PORT || 3000,
@@ -53,9 +56,10 @@ module.exports = {
   ownerPsid: process.env.OWNER_PSID || null,
   // Keep-alive: periodic self-ping to avoid Render free-tier spin-down.
   // RENDER_EXTERNAL_URL is set automatically by Render for every web
-  // service — EXTERNAL_URL is a manual override for other hosts.
+  // service — EXTERNAL_URL is a manual override for other hosts. Default
+  // interval is 5 min, comfortably under Render's 15-min idle window.
   keepAliveEnabled: process.env.KEEP_ALIVE !== "false",
-  keepAliveIntervalMs: Number(process.env.KEEP_ALIVE_INTERVAL_MS) || 10 * 60 * 1000,
+  keepAliveIntervalMs: Number(process.env.KEEP_ALIVE_INTERVAL_MS) || 5 * 60 * 1000,
   externalUrl: process.env.RENDER_EXTERNAL_URL || process.env.EXTERNAL_URL || null,
   // Optional: if set, /dashboard requires ?token=<this value>. If unset,
   // the dashboard is open to anyone with the URL — fine for a private

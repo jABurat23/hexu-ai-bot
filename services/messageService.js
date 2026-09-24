@@ -1,16 +1,14 @@
-const { sendText, sendButtonTemplate, sendTypingOn } = require("../lib/messenger");
+const { sendText, sendButtonTemplate } = require("../lib/messenger");
 const { REACTION_PENDING, REACTION_DONE, REACTION_ERROR, setReaction } = require("../lib/reaction");
-const { getAiReply } = require("../lib/claude");
 const {
   getOrCreateUser,
   saveMessage,
-  getRecentHistory,
   claimMessage,
   getBlockedUser,
 } = require("../lib/supabase");
 const { parseCommand, runCommand } = require("../commands");
 const logger = require("../utils/logger");
-const { recordEvent, recordAi } = require("../utils/metrics");
+const { recordEvent } = require("../utils/metrics");
 
 /**
  * Handles one Messenger "messaging" event: a user's incoming text message.
@@ -83,8 +81,8 @@ async function handleEvent(event, eventId = logger.newEventId()) {
     return;
   }
 
-  logger.debug(scope, "No command matched — routed to AI fallback.");
-  await handleAiFallback(psid, scope);
+  logger.debug(scope, "No command matched — sending !help pointer.");
+  await sendUnmatchedTextGuidance(psid, scope);
   recordEvent(Date.now() - eventStartedAt);
 }
 
@@ -107,6 +105,16 @@ async function sendUnsupportedMessage(psid, scope) {
     logger.debug(scope, "Sent unsupported-message guidance.");
   } catch (err) {
     logger.warn(scope, "Failed to send unsupported-message guidance:", err.message);
+  }
+}
+
+async function sendUnmatchedTextGuidance(psid, scope) {
+  try {
+    await saveMessage(psid, "assistant", "!help");
+    await sendText(psid, "!help");
+    logger.debug(scope, "Sent !help pointer for unmatched text.");
+  } catch (err) {
+    logger.warn(scope, "Failed to send !help pointer:", err.message);
   }
 }
 
@@ -151,29 +159,6 @@ async function handleCommand(user, name, args, scope, messageId) {
   } catch (err) {
     setReaction(psid, messageId, REACTION_ERROR, scope);
     throw err;
-  }
-}
-
-async function handleAiFallback(psid, scope) {
-  await sendTypingOn(psid);
-  try {
-    const history = await getRecentHistory(psid);
-    const reply = await getAiReply(history);
-    recordAi();
-    await saveMessage(psid, "assistant", reply);
-    await sendText(psid, reply);
-    logger.debug(scope, `AI replied (${reply.length} chars).`);
-  } catch (err) {
-    recordAi(true);
-    logger.warn(scope, "AI fallback skipped:", err.message);
-    const fallback =
-      "I’m temporarily unable to answer right now. Please try again in a moment.";
-    try {
-      await saveMessage(psid, "assistant", fallback);
-      await sendText(psid, fallback);
-    } catch (fallbackErr) {
-      logger.error(scope, "Failed to send AI fallback message:", fallbackErr.message);
-    }
   }
 }
 

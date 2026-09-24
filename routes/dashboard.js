@@ -2,6 +2,7 @@ const express = require("express");
 const config = require("../config");
 const commandLoader = require("../lib/commandLoader");
 const { snapshot } = require("../utils/metrics");
+const contextCache = require("../utils/contextCache");
 const { messageQueue } = require("./webhook");
 const logger = require("../utils/logger");
 
@@ -33,10 +34,20 @@ function formatUptime(totalSeconds) {
   return parts.join(" ");
 }
 
+// Server-side cache: multiple open dashboard tabs (or a fast manual
+// refresh) reuse the same snapshot instead of recomputing every hit.
+const STATS_CACHE_TTL_MS = 10_000;
+let cachedStats = null;
+let cachedStatsAt = 0;
+
 function getStats() {
+  if (cachedStats && Date.now() - cachedStatsAt < STATS_CACHE_TTL_MS) {
+    return cachedStats;
+  }
+
   const m = snapshot();
   const cmd = commandLoader.getCacheStats();
-  return {
+  cachedStats = {
     uptime: formatUptime(m.uptimeSeconds),
     nodeEnv: config.nodeEnv,
     commands: {
@@ -52,12 +63,15 @@ function getStats() {
     },
     commandRuns: { run: m.commandsRun, failed: m.commandsFailed },
     ai: { replies: m.aiReplies, failures: m.aiFailures },
+    aiContext: contextCache.getStats(),
     queue: messageQueue.getStats(),
     keepAlive: {
       enabled: config.keepAliveEnabled && !!config.externalUrl,
       intervalMinutes: Math.round(config.keepAliveIntervalMs / 60000),
     },
   };
+  cachedStatsAt = Date.now();
+  return cachedStats;
 }
 
 router.get("/api/stats", checkToken, (req, res) => {
@@ -113,11 +127,26 @@ function renderPage() {
   .row span:first-child { color: #555; }
   .row span:last-child { font-weight: 600; }
   #updated { color: #999; font-size: 0.75rem; margin-top: 1.5rem; }
+  .sub-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+  #refreshBtn {
+    font: inherit;
+    font-size: 0.8rem;
+    background: #fff;
+    border: 1px solid #d8d8d8;
+    border-radius: 5px;
+    padding: 0.35rem 0.7rem;
+    cursor: pointer;
+    color: #333;
+  }
+  #refreshBtn:hover { background: #f0f0f0; }
 </style>
 </head>
 <body>
   <h1>Hexu AI Dashboard</h1>
-  <div class="sub">Live status — refreshes every 5s.</div>
+  <div class="sub-row">
+    <div class="sub">Live status — auto-refreshes every 15s.</div>
+    <button id="refreshBtn" onclick="refresh()">Refresh now</button>
+  </div>
   <div class="grid" id="grid"></div>
   <div id="updated"></div>
 
@@ -163,6 +192,10 @@ function renderPage() {
             ["Replies", s.ai.replies],
             ["Failures", s.ai.failures],
           ]),
+          card("AI Context Cache", [
+            ["Cached users", s.aiContext.cachedUsers + " / " + s.aiContext.maxUsers],
+            ["Calls (last min)", s.aiContext.recentCallsLastMinute],
+          ]),
           card("Queue", [
             ["Queued", s.queue.queued],
             ["Active", s.queue.active],
@@ -183,7 +216,7 @@ function renderPage() {
     }
 
     refresh();
-    setInterval(refresh, 5000);
+    setInterval(refresh, 15000);
   </script>
 </body>
 </html>`;

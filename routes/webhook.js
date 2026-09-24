@@ -11,6 +11,22 @@ const messageQueue = new MessageQueue({
   concurrency: config.queueConcurrency,
 });
 
+// Fast pre-check dedup: Meta can redeliver the same webhook event, and this
+// short-circuits a true dupe before it even reaches the queue or the DB
+// (lib/supabase.js's claimMessage is still the source of truth across
+// restarts, since this Set is cleared on every deploy — this is purely a
+// same-process optimization to save a queue slot + DB round trip).
+const recentlySeenMessageIds = new Set();
+const DEDUP_TTL_MS = 10_000;
+
+function isDuplicateInMemory(messageId) {
+  if (!messageId) return false;
+  if (recentlySeenMessageIds.has(messageId)) return true;
+  recentlySeenMessageIds.add(messageId);
+  setTimeout(() => recentlySeenMessageIds.delete(messageId), DEDUP_TTL_MS).unref();
+  return false;
+}
+
 // --- Webhook verification (Meta calls this once when you save the config) ---
 router.get("/", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -59,6 +75,13 @@ router.post("/", async (req, res) => {
       const eventId = logger.newEventId();
       const startedAt = Date.now();
       logger.debug(`evt:${eventId}`, describeEvent(event));
+
+      const messageId = event.message?.mid || event.postback?.mid;
+      if (isDuplicateInMemory(messageId)) {
+        logger.debug(`evt:${eventId}`, `Skipped (in-memory dedup) mid=${messageId}.`);
+        continue;
+      }
+
       const accepted = messageQueue.enqueue(async () => {
         try {
           await handleEvent(event, eventId);
