@@ -41,6 +41,10 @@ async function runCommand(name, user, args) {
   const command = commandLoader.getCommand(name);
   if (!command) return null;
 
+  if (commandLoader.isDisabled(command.name)) {
+    return `The !${command.name} command is currently disabled.`;
+  }
+
   if (command.requiredRole) {
     if (!hasPermission(user.access_role, command.requiredRole)) {
       return [
@@ -65,10 +69,10 @@ async function runCommand(name, user, args) {
   try {
     const result = await command.handler(user, args, registry);
     if (cooldownSeconds > 0) cooldowns.set(cooldownKey, Date.now());
-    recordCommand();
+    recordCommand(command.name);
     return result;
   } catch (error) {
-    recordCommand(true);
+    recordCommand(command.name, true);
     throw error;
   }
 }

@@ -64,3 +64,13 @@ create table if not exists moderation_audit (
 
 create index if not exists moderation_audit_target_created_at_idx
   on moderation_audit (target_psid, created_at desc);
+
+-- Dashboard-configured settings that need to survive a restart/redeploy:
+-- log level, AI persona, keep-alive interval, disabled/hidden commands.
+-- One row per setting, value stored as jsonb so any type (string, number,
+-- array) fits without further migrations.
+create table if not exists bot_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);

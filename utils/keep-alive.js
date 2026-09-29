@@ -1,6 +1,7 @@
 const axios = require("axios");
 const config = require("../config");
 const logger = require("./logger");
+const runtimeSettings = require("./runtimeSettings");
 
 /**
  * Render's free web services spin down after 15 minutes without inbound
@@ -14,6 +15,10 @@ const logger = require("./logger");
  * other reasons (deploys, host maintenance, etc.), and this only helps on
  * the free tier in the first place. Treat it as "good enough to avoid the
  * common case", not a reliability promise.
+ *
+ * The interval value itself lives in utils/runtimeSettings.js (persisted
+ * to Supabase) — this file just owns the timer mechanics: start, stop,
+ * retry-on-failure, and restarting when the interval changes live.
  */
 
 let intervalHandle = null;
@@ -44,10 +49,15 @@ async function pingSelf(url, attempt = 1) {
   }
 }
 
+function isRunnable() {
+  return config.keepAliveEnabled && !!config.externalUrl;
+}
+
 /**
- * Starts the periodic self-ping. Safe to call unconditionally at startup —
- * it no-ops when disabled, when there's no known public URL to ping
- * (e.g. running locally), or if it's already running.
+ * Starts the periodic self-ping, using whatever interval runtimeSettings
+ * currently holds. Safe to call unconditionally at startup — it no-ops
+ * when disabled, when there's no known public URL to ping (e.g. running
+ * locally), or if it's already running.
  */
 function startKeepAlive() {
   if (!config.keepAliveEnabled) {
@@ -63,13 +73,14 @@ function startKeepAlive() {
   }
   if (intervalHandle) return; // already running
 
-  const minutes = Math.round(config.keepAliveIntervalMs / 60000);
+  const intervalMs = runtimeSettings.getKeepAliveIntervalMs();
+  const minutes = Math.round(intervalMs / 60000);
   logger.info(
     "keepAlive",
     `Pinging ${config.externalUrl} every ${minutes} min to prevent free-tier spin-down.`
   );
 
-  intervalHandle = setInterval(() => pingSelf(config.externalUrl), config.keepAliveIntervalMs);
+  intervalHandle = setInterval(() => pingSelf(config.externalUrl), intervalMs);
   // Don't let this timer alone keep the Node process alive during shutdown.
   intervalHandle.unref();
 }
@@ -81,4 +92,34 @@ function stopKeepAlive() {
   }
 }
 
-module.exports = { startKeepAlive, stopKeepAlive };
+/**
+ * Restarts the timer so a live interval change (via
+ * runtimeSettings.setKeepAliveIntervalMs) actually takes effect right
+ * away instead of waiting for the current cycle to finish. No-ops if the
+ * timer isn't currently running — the new interval just applies whenever
+ * it does start.
+ */
+function restart() {
+  if (!intervalHandle) return;
+  stopKeepAlive();
+  startKeepAlive();
+}
+
+function getStatus() {
+  const intervalMs = runtimeSettings.getKeepAliveIntervalMs();
+  return {
+    running: !!intervalHandle,
+    runnable: isRunnable(),
+    intervalMs,
+    intervalMinutes: Math.round(intervalMs / 60000),
+    intervalIsDefault: intervalMs === config.keepAliveIntervalMs,
+    externalUrl: config.externalUrl,
+  };
+}
+
+module.exports = {
+  startKeepAlive,
+  stopKeepAlive,
+  restart,
+  getStatus,
+};

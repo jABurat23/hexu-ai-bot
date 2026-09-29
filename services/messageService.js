@@ -1,4 +1,4 @@
-const { sendText, sendButtonTemplate } = require("../lib/messenger");
+const { sendText, sendButtonTemplate, sendImage } = require("../lib/messenger");
 const { REACTION_PENDING, REACTION_DONE, REACTION_ERROR, setReaction } = require("../lib/reaction");
 const {
   getOrCreateUser,
@@ -149,6 +149,14 @@ async function handleCommand(user, name, args, scope, messageId) {
           scope,
           `Replied to "!${name}" (button_template, ${result.buttons.length} button(s)).`
         );
+      } else if (result.type === "image") {
+        if (result.text) await sendText(psid, result.text);
+        try {
+          await sendImage(psid, result.url);
+          logger.debug(scope, `Replied to "!${name}" (image attachment).`);
+        } catch (imgErr) {
+          logger.warn(scope, `Failed to send image attachment (${result.url}): ${imgErr.message}`);
+        }
       } else {
         await sendText(psid, result.text);
         logger.debug(scope, `Replied to "!${name}" (text).`);

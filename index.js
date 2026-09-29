@@ -3,10 +3,22 @@ const config = require("./config");
 const logger = require("./utils/logger");
 const webhookRouter = require("./routes/webhook");
 const dashboardRouter = require("./routes/dashboard");
+const profileCardRouter = require("./routes/profileCard");
 const { snapshot } = require("./utils/metrics");
 const { startKeepAlive, stopKeepAlive } = require("./utils/keep-alive");
+const runtimeSettings = require("./utils/runtimeSettings");
+const commandLoader = require("./lib/commandLoader");
 
 const app = express();
+
+// On Render, every request arrives via their proxy. Without this, req.ip is
+// the proxy's address for everyone — which would make the dashboard's
+// per-IP brute-force limiter treat all visitors as one client (so an
+// attacker's failed guesses could lock the real admin out).
+// A hop COUNT (1) rather than `true` on purpose: `true` trusts the
+// leftmost X-Forwarded-For entry, which a client can forge to dodge the
+// limiter; a hop count takes the address the trusted proxy itself added.
+app.set("trust proxy", config.nodeEnv === "production" ? 1 : false);
 
 // Keep the raw body around so the webhook route can verify Meta's signature.
 app.use(
@@ -187,13 +199,48 @@ app.get("/", (_req, res) => {
     </html>
   `);
 });
+app.use("/api/profile-card", profileCardRouter);
 app.use("/webhook", webhookRouter);
 app.use("/dashboard", dashboardRouter);
 
-const server = app.listen(config.port, () => {
-  logger.info("server", `Hexu AI bot listening on port ${config.port}`);
-  startKeepAlive();
-});
+let server;
+
+/** Races a promise against a timeout — if hydration is slow (a Supabase
+ * hiccup, DNS issue, etc.), startup proceeds with current defaults rather
+ * than hanging. The underlying call isn't cancelled, so a late response
+ * still applies its result whenever it actually arrives. */
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => {
+      setTimeout(() => {
+        logger.warn(
+          "server",
+          `${label} hydration is taking longer than ${ms}ms — continuing with current defaults; it may still apply in the background.`
+        );
+        resolve();
+      }, ms).unref();
+    }),
+  ]);
+}
+
+async function start() {
+  // Both fall back to .env-derived defaults on any DB error, and both run
+  // in parallel with a shared timeout ceiling — a Supabase hiccup at boot
+  // delays startup by at most HYDRATE_TIMEOUT_MS, never blocks it outright.
+  const HYDRATE_TIMEOUT_MS = 5000;
+  await Promise.all([
+    withTimeout(runtimeSettings.hydrateFromDb(), HYDRATE_TIMEOUT_MS, "Settings"),
+    withTimeout(commandLoader.hydrateFromDb(), HYDRATE_TIMEOUT_MS, "Command flags"),
+  ]);
+
+  server = app.listen(config.port, () => {
+    logger.info("server", `Hexu AI bot listening on port ${config.port}`);
+    startKeepAlive();
+  });
+}
+
+start();
 
 let shuttingDown = false;
 async function shutdown(signal) {
@@ -202,7 +249,7 @@ async function shutdown(signal) {
   logger.info("server", `Received ${signal}; stopping new work.`);
   stopKeepAlive();
   webhookRouter.messageQueue.stopAccepting();
-  await new Promise((resolve) => server.close(resolve));
+  if (server) await new Promise((resolve) => server.close(resolve));
   await webhookRouter.messageQueue.drain(config.shutdownTimeoutMs);
   logger.info("server", `Shutdown complete. Events handled: ${snapshot().eventsCompleted}`);
   process.exit(0);
