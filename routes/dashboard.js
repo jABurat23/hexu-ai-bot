@@ -153,6 +153,9 @@ function checkAuth(req, res, next) {
   }
 
   recordAuthFailure(req.ip);
+  if (req.accepts("html") && (req.path === "/" || req.path === "")) {
+    return res.status(401).type("text/html").send(renderLoginPage(provided ? "Invalid token." : ""));
+  }
   res.status(401).type("text/plain").send("Unauthorized. Add ?token=YOUR_DASHBOARD_TOKEN to the URL.");
 }
 
@@ -403,6 +406,87 @@ router.get("/", checkAuth, (req, res) => {
   res.type("text/html").send(renderPage());
 });
 
+function renderLoginPage(errorMsg = "") {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hexu AI — Sign In</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace, sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 1.5rem;
+  }
+  .login-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 360px;
+  }
+  h1 { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.25rem; letter-spacing: -0.01em; }
+  .sub { font-size: 0.8rem; color: #7d8590; margin-bottom: 1.5rem; }
+  label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #7d8590; margin-bottom: 0.4rem; font-weight: 600; }
+  input[type="password"] {
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 5px;
+    color: #e6edf3;
+    font-size: 0.85rem;
+    font-family: monospace;
+    outline: none;
+    margin-bottom: 1rem;
+  }
+  input:focus { border-color: #58a6ff; }
+  button {
+    width: 100%;
+    padding: 0.55rem;
+    background: #238636;
+    border: 1px solid #2ea043;
+    border-radius: 5px;
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button:hover { background: #2ea043; }
+  .err { font-size: 0.78rem; color: #f85149; margin-top: 0.75rem; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="login-card">
+    <h1>Hexu AI</h1>
+    <p class="sub">Dashboard Authentication</p>
+    <form onsubmit="handleLogin(event)">
+      <label for="tokenInput">Access Token</label>
+      <input type="password" id="tokenInput" placeholder="Paste DASHBOARD_TOKEN" required autofocus />
+      <button type="submit">Sign In</button>
+      ${errorMsg ? `<div class="err">${errorMsg}</div>` : ""}
+    </form>
+  </div>
+  <script>
+    function handleLogin(e) {
+      e.preventDefault();
+      const token = document.getElementById("tokenInput").value.trim();
+      if (!token) return;
+      window.location.href = window.location.pathname + "?token=" + encodeURIComponent(token);
+    }
+  </script>
+</body>
+</html>`;
+}
+
 function renderPage() {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -411,200 +495,539 @@ function renderPage() {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hexu AI — Dashboard</title>
 <style>
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f7f7f8;
-    color: #111;
-    margin: 0;
-    padding: 2rem;
+    background: #0d1117;
+    color: #e6edf3;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    padding-bottom: 3rem;
   }
-  h1 { font-size: 1.3rem; margin: 0 0 0.2rem 0; }
-  h3 { font-size: 0.95rem; margin: 2rem 0 0.6rem 0; }
-  .sub { color: #666; margin-bottom: 1.5rem; font-size: 0.85rem; }
-  .grid {
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem;
+  }
+  /* Top Header */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #21262d;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .brand h1 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    color: #7d8590;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .badge-healthy { color: #3fb950; border-color: rgba(63, 185, 80, 0.3); }
+  .badge-degraded { color: #d29922; border-color: rgba(210, 153, 34, 0.3); }
+  .badge-down { color: #f85149; border-color: rgba(248, 81, 73, 0.3); }
+
+  /* Navigation Bar */
+  nav {
+    display: flex;
+    gap: 0.25rem;
+    background: #161b22;
+    padding: 0.2rem;
+    border-radius: 6px;
+    border: 1px solid #30363d;
+  }
+  nav button {
+    background: transparent;
+    border: none;
+    color: #7d8590;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.1s, background 0.1s;
+  }
+  nav button:hover { color: #e6edf3; }
+  nav button.active {
+    background: #21262d;
+    color: #e6edf3;
+    font-weight: 600;
+  }
+
+  /* Utility Actions */
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  button.btn {
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 5px;
+    padding: 0.35rem 0.65rem;
+    color: #c9d1d9;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  button.btn:hover { background: #30363d; color: #fff; }
+  button.btn-primary { background: #238636; border-color: #2ea043; color: #fff; }
+  button.btn-primary:hover { background: #2ea043; }
+  button.btn-danger { color: #f85149; }
+  button.btn-danger:hover { background: rgba(248, 81, 73, 0.1); border-color: #f85149; }
+
+  /* Tab Panels */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Metric KPI Grid */
+  .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-    gap: 0.9rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
   }
   .card {
-    background: #fff;
-    border: 1px solid #e3e3e3;
+    background: #161b22;
+    border: 1px solid #21262d;
     border-radius: 6px;
-    padding: 0.9rem 1rem;
+    padding: 0.85rem 1rem;
   }
-  .card h2 {
+  .card-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #7d8590;
+    margin-bottom: 0.4rem;
+  }
+  .card-metric {
+    font-size: 1.25rem;
+    font-weight: 600;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #e6edf3;
+    margin-bottom: 0.35rem;
+  }
+  .card-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.76rem;
+    color: #7d8590;
+  }
+  .card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-row span:last-child {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #c9d1d9;
+  }
+  .card-row .bad { color: #f85149; font-weight: 600; }
+
+  /* Section Headers */
+  .section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 1.25rem 0 0.6rem 0;
+  }
+  .section-head h2 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #7d8590;
+  }
+
+  /* Tables */
+  .table-wrap {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin-bottom: 1rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+    text-align: left;
+  }
+  th {
+    background: #1c2128;
+    color: #7d8590;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid #30363d;
+  }
+  td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #21262d;
+    color: #c9d1d9;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255, 255, 255, 0.02); }
+  .cmd-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 600;
+    color: #58a6ff;
+  }
+  .tag {
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    margin-left: 0.35rem;
+    display: inline-block;
+  }
+  .tag-hidden { background: rgba(88, 166, 255, 0.12); color: #58a6ff; }
+  .tag-disabled { background: rgba(248, 81, 73, 0.12); color: #f85149; }
+  .tag-role { background: #21262d; color: #7d8590; font-family: monospace; }
+  .role-admin { color: #d29922; background: rgba(210, 153, 34, 0.12); }
+  .role-owner { color: #f0883e; background: rgba(240, 136, 62, 0.12); }
+
+  /* Forms & Settings */
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .panel {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    padding: 1rem;
+  }
+  .panel h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #e6edf3;
+    margin-bottom: 0.25rem;
+  }
+  .panel-sub {
+    font-size: 0.75rem;
+    color: #7d8590;
+    margin-bottom: 0.85rem;
+  }
+  .form-group {
+    margin-bottom: 0.85rem;
+  }
+  .form-group label {
+    display: block;
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #888;
-    margin: 0 0 0.5rem 0;
     font-weight: 600;
+    color: #7d8590;
+    margin-bottom: 0.35rem;
   }
-  .row { display: flex; justify-content: space-between; padding: 0.15rem 0; font-size: 0.88rem; }
-  .row span:first-child { color: #555; }
-  .row span:last-child { font-weight: 600; }
-  #updated { color: #999; font-size: 0.75rem; margin-top: 1.5rem; }
-  .sub-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.5rem; }
-  button {
-    font: inherit;
-    font-size: 0.8rem;
-    background: #fff;
-    border: 1px solid #d8d8d8;
-    border-radius: 5px;
-    padding: 0.35rem 0.7rem;
-    cursor: pointer;
-    color: #333;
-  }
-  button:hover { background: #f0f0f0; }
-  #statusBadge { font-weight: 600; font-size: 0.85rem; }
-  .bad { color: #cf222e; }
-  .loading-msg { color: #999; font-size: 0.85rem; padding: 0.5rem 0; }
-  #reloadResult { color: #666; font-size: 0.78rem; margin-top: 0.4rem; min-height: 1em; }
-  .persist-warning {
-    background: #eefbf0;
-    border: 1px solid #b8e6c1;
-    border-radius: 6px;
-    padding: 0.6rem 0.8rem;
-    font-size: 0.8rem;
-    color: #1a5c2a;
-    margin-bottom: 1rem;
-  }
-  .settings-card {
-    background: #fff;
-    border: 1px solid #e3e3e3;
-    border-radius: 6px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-  }
-  .settings-card label { display: block; font-size: 0.78rem; color: #555; margin-bottom: 0.3rem; }
-  .settings-card select, .settings-card textarea, .settings-card input[type=number] {
-    font: inherit;
-    font-size: 0.85rem;
+  select, input[type="text"], input[type="number"], textarea {
     width: 100%;
-    border: 1px solid #d8d8d8;
+    background: #0d1117;
+    border: 1px solid #30363d;
     border-radius: 5px;
-    padding: 0.4rem 0.5rem;
-    margin-bottom: 0.5rem;
+    color: #e6edf3;
+    font: inherit;
+    font-size: 0.82rem;
+    padding: 0.45rem 0.65rem;
+    outline: none;
   }
-  .settings-card textarea { min-height: 70px; resize: vertical; }
-  .settings-row { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
-  .settings-row > div { flex: 1; min-width: 200px; }
-  .result-msg { font-size: 0.78rem; color: #666; margin-top: 0.3rem; min-height: 1em; }
-  .default-tag { color: #999; font-size: 0.72rem; margin-left: 0.4rem; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; background: #fff; border: 1px solid #e3e3e3; border-radius: 6px; overflow: hidden; }
-  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eee; }
-  th { background: #fafafa; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: #888; }
-  tr:last-child td { border-bottom: none; }
-  .tag { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 4px; margin-right: 0.25rem; }
-  .tag.hidden-tag { background: #eef; color: #446; }
-  .tag.disabled-tag { background: #fee; color: #922; }
-  .cmd-actions button { font-size: 0.72rem; padding: 0.2rem 0.45rem; margin-right: 0.25rem; }
-  #logsContainer {
+  select:focus, input:focus, textarea:focus { border-color: #58a6ff; }
+  textarea {
+    min-height: 90px;
+    resize: vertical;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+  .info-banner {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.76rem;
+    color: #7d8590;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .info-banner svg { flex-shrink: 0; color: #58a6ff; }
+  .result-msg {
+    font-size: 0.75rem;
+    color: #7d8590;
+    margin-top: 0.4rem;
+    min-height: 1.2em;
+  }
+
+  /* Logs Terminal */
+  .log-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .log-filters {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .log-terminal {
+    background: #090d13;
+    border: 1px solid #21262d;
+    border-radius: 6px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 0.74rem;
     line-height: 1.45;
-    background: #fafafa;
-    border: 1px solid #e3e3e3;
-    border-radius: 5px;
-    padding: 0.5rem 0.6rem;
-    height: 320px;
+    padding: 0.75rem;
+    height: 420px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
   }
   .log-line { padding: 0.05rem 0; }
-  .log-debug { color: #888; }
-  .log-info { color: #222; }
-  .log-warn { color: #9a6700; }
-  .log-error { color: #cf222e; }
+  .log-debug { color: #484f58; }
+  .log-info { color: #c9d1d9; }
+  .log-warn { color: #d29922; }
+  .log-error { color: #f85149; }
+
+  /* Footer meta */
+  footer {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.72rem;
+    color: #484f58;
+    border-top: 1px solid #21262d;
+    padding-top: 0.75rem;
+  }
 </style>
 </head>
 <body>
-  <div class="sub-row" style="margin-bottom: 0.2rem;">
-    <h1>Hexu AI Dashboard</h1>
-    <span id="statusBadge"></span>
-  </div>
-  <div class="sub-row">
-    <div class="sub">Live status — auto-refreshes every 15s.</div>
-    <div>
-      <button onclick="refresh()">Refresh now</button>
-      <button onclick="reloadCommands(false)">Reload commands</button>
-      <button onclick="reloadCommands(true)">Force reload</button>
-      <button onclick="logout()">Log out</button>
-    </div>
-  </div>
-  <div id="reloadResult"></div>
-  <div class="grid" id="grid"><div class="loading-msg">Loading stats…</div></div>
-  <div id="updated"></div>
-
-  <h3>Settings</h3>
-  <div class="persist-warning">
-    ✅ Log level, persona, keep-alive interval, and hidden/disabled commands are saved to Supabase and survive a restart or redeploy. If a save ever fails (e.g. a Supabase hiccup), the change still applies immediately here, but a warning will say it won't persist.
-  </div>
-
-  <div class="settings-card">
-    <div class="settings-row">
-      <div>
-        <label for="logLevelSelect">Log level<span id="logLevelDefaultTag" class="default-tag"></span></label>
-        <select id="logLevelSelect" onchange="setLogLevel(this.value)">
-          <option value="debug">debug</option>
-          <option value="info">info</option>
-          <option value="warn">warn</option>
-          <option value="error">error</option>
-        </select>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <h1>Hexu AI</h1>
+        <span id="statusBadge" class="badge">Loading status…</span>
+        <span id="envBadge" class="badge"></span>
       </div>
-      <div>
-        <label for="keepAliveInput">Keep-alive interval (minutes)</label>
-        <div style="display:flex; gap:0.4rem;">
-          <input type="number" id="keepAliveInput" min="1" step="1" style="margin-bottom:0;" />
-          <button onclick="setKeepAliveInterval()">Save</button>
+
+      <!-- Navigation Tabs -->
+      <nav>
+        <button class="active" onclick="switchTab('overview')">Overview</button>
+        <button onclick="switchTab('commands')">Commands</button>
+        <button onclick="switchTab('settings')">Settings</button>
+        <button onclick="switchTab('logs')">Logs</button>
+      </nav>
+
+      <!-- Action Buttons -->
+      <div class="header-actions">
+        <button class="btn" onclick="refresh()" title="Refresh stats snapshot">⟳ Refresh</button>
+        <button class="btn" onclick="reloadCommands(false)" title="Reload command files">↻ Reload</button>
+        <button class="btn btn-danger" onclick="logout()" title="End session">Log out</button>
+      </div>
+    </header>
+
+    <!-- TAB 1: OVERVIEW -->
+    <div id="tab-overview" class="tab-panel active">
+      <div class="metrics-grid" id="metricsGrid">
+        <div class="card"><div class="card-title">System</div><div class="card-metric">…</div></div>
+      </div>
+
+      <div class="section-head">
+        <h2>Top Command Activity</h2>
+        <span id="topCmdCount" style="font-size: 0.75rem; color: #7d8590;"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>Total Calls</th>
+              <th>Successful</th>
+              <th>Failed</th>
+            </tr>
+          </thead>
+          <tbody id="topCommandsBody">
+            <tr><td colspan="4" style="color: #7d8590; text-align: center;">Loading activity…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 2: COMMANDS -->
+    <div id="tab-commands" class="tab-panel">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+        <input type="text" id="cmdSearchInput" placeholder="Filter commands by name or role…" style="max-width: 320px;" oninput="filterCommandsTable()" />
+        <div style="display: flex; gap: 0.4rem; align-items: center;">
+          <button class="btn" onclick="reloadCommands(true)">Force Disk Reload</button>
+          <span id="reloadResult" class="result-msg" style="margin-top: 0;"></span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>Category</th>
+              <th>Required Role</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="commandsTableBody">
+            <tr><td colspan="4" style="color: #7d8590; text-align: center;">Loading commands…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 3: SETTINGS -->
+    <div id="tab-settings" class="tab-panel">
+      <div class="info-banner">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm6.5-.25A.75.75 0 017.25 7h1.5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-2.75h-.75a.75.75 0 01-.75-.75zM8 4a1 1 0 100 2 1 1 0 000-2z"></path></svg>
+        <span>Runtime settings persist to Supabase (<code>bot_settings</code>) and survive restarts. Changes apply live immediately.</span>
+      </div>
+
+      <div class="settings-grid">
+        <!-- Runtime Controls -->
+        <div class="panel">
+          <h3>Runtime Controls</h3>
+          <p class="panel-sub">Adjust server verbosity and Render keep-alive frequency.</p>
+
+          <div class="form-group">
+            <label for="logLevelSelect">Log Level <span id="logLevelTag" style="font-weight: normal; color: #58a6ff;"></span></label>
+            <select id="logLevelSelect" onchange="setLogLevel(this.value)">
+              <option value="debug">debug (verbose, logs all events)</option>
+              <option value="info">info (recommended)</option>
+              <option value="warn">warn (warnings & errors only)</option>
+              <option value="error">error (critical failures only)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="keepAliveInput">Keep-Alive Ping Interval (Minutes)</label>
+            <div style="display: flex; gap: 0.4rem;">
+              <input type="number" id="keepAliveInput" min="1" max="60" step="1" />
+              <button class="btn" onclick="setKeepAliveInterval()" style="flex-shrink: 0;">Save</button>
+            </div>
+            <p style="font-size: 0.7rem; color: #7d8590; margin-top: 0.25rem;">Render free tier spins down after 15 min of idle time. Default is 5 min.</p>
+          </div>
+
+          <div id="settingsResult" class="result-msg"></div>
+        </div>
+
+        <!-- AI Persona -->
+        <div class="panel">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <h3>Gemini AI Persona</h3>
+            <span id="personaCharCount" style="font-size: 0.7rem; color: #7d8590;"></span>
+          </div>
+          <p class="panel-sub">Custom system prompt for the <code>!ai</code> command.</p>
+
+          <div class="form-group">
+            <textarea id="personaInput" maxlength="2000" oninput="updatePersonaCount()"></textarea>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.4rem;">
+            <div style="display: flex; gap: 0.4rem;">
+              <button class="btn btn-primary" onclick="savePersona()">Save Persona</button>
+              <button class="btn" onclick="resetPersona()">Reset Default</button>
+            </div>
+            <span id="personaDefaultTag" style="font-size: 0.72rem; color: #7d8590;"></span>
+          </div>
+          <div id="personaResult" class="result-msg"></div>
         </div>
       </div>
     </div>
-    <div id="settingsResult" class="result-msg"></div>
-  </div>
 
-  <div class="settings-card">
-    <label for="personaInput">Bot persona / system prompt<span id="personaDefaultTag" class="default-tag"></span></label>
-    <textarea id="personaInput" maxlength="2000"></textarea>
-    <div>
-      <button onclick="savePersona()">Save persona</button>
-      <button onclick="resetPersona()">Reset to default</button>
+    <!-- TAB 4: LOGS -->
+    <div id="tab-logs" class="tab-panel">
+      <div class="log-controls">
+        <div class="log-filters">
+          <select id="logLevelFilter" onchange="renderLogs()" style="width: auto; padding: 0.3rem 0.5rem; font-size: 0.78rem;">
+            <option value="all">All Levels</option>
+            <option value="debug">debug</option>
+            <option value="info">info</option>
+            <option value="warn">warn</option>
+            <option value="error">error</option>
+          </select>
+          <input type="text" id="logSearchInput" placeholder="Filter log text…" style="width: 220px; padding: 0.3rem 0.5rem; font-size: 0.78rem;" oninput="renderLogs()" />
+        </div>
+        <div style="display: flex; gap: 0.4rem; align-items: center;">
+          <label style="font-size: 0.75rem; color: #7d8590; display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+            <input type="checkbox" id="autoScrollCheck" checked /> Auto-scroll
+          </label>
+          <button class="btn" onclick="loadLogs()">⟳ Refresh</button>
+          <button class="btn" onclick="clearLogsView()">Clear View</button>
+        </div>
+      </div>
+      <div class="log-terminal" id="logsContainer">Loading logs…</div>
     </div>
-    <div id="personaResult" class="result-msg"></div>
-  </div>
 
-  <h3>Manage Commands</h3>
-  <div id="commandsTableWrap"><div class="loading-msg">Loading commands…</div></div>
-
-  <h3>Logs</h3>
-  <div class="settings-card">
-    <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; margin-bottom:0.6rem;">
-      <label for="logLevelFilter" style="margin:0;">Show</label>
-      <select id="logLevelFilter" onchange="loadLogs()" style="width:auto; margin:0;">
-        <option value="all">all levels</option>
-        <option value="debug">debug</option>
-        <option value="info">info</option>
-        <option value="warn">warn</option>
-        <option value="error">error</option>
-      </select>
-      <button onclick="loadLogs()">Refresh logs</button>
-      <span class="result-msg" style="margin:0;">Auto-refreshes every 5s. Only shows what the current log level lets through.</span>
-    </div>
-    <div id="logsContainer"><div class="loading-msg">Loading logs…</div></div>
+    <!-- Footer -->
+    <footer>
+      <span id="lastUpdated">Updated just now</span>
+      <span>Auto-refresh: 15s (Stats) / 5s (Logs)</span>
+    </footer>
   </div>
 
   <script>
-    // No token handling here on purpose: the ?token=... you logged in with is
-    // exchanged server-side for an HttpOnly session cookie on the very first
-    // page load, and the browser attaches that cookie to every fetch below
-    // automatically. The token never appears in any of these request URLs.
     const apiUrl = "/dashboard/api/stats";
     const reloadUrl = "/dashboard/api/reload";
     const settingsUrl = "/dashboard/api/settings";
     const commandsUrl = "/dashboard/api/commands";
     const logsUrl = "/dashboard/api/logs";
+
+    let cachedCommands = [];
+    let cachedLogs = [];
+
+    // Tab Navigation
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+      document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+      const target = document.getElementById("tab-" + tabId);
+      if (target) target.classList.add("active");
+      const btn = Array.from(document.querySelectorAll("nav button")).find(b => b.textContent.toLowerCase() === tabId);
+      if (btn) btn.classList.add("active");
+
+      // Auto-load tab data on first switch
+      if (tabId === "commands" && !cachedCommands.length) loadCommandsTable();
+      if (tabId === "settings") loadSettings();
+      if (tabId === "logs") loadLogs();
+    }
 
     async function postJson(url, body) {
       const res = await fetch(url, {
@@ -617,40 +1040,27 @@ function renderPage() {
       return data;
     }
 
-    async function reloadCommands(force) {
-      const resultEl = document.getElementById("reloadResult");
-      resultEl.textContent = "Reloading…";
-      try {
-        const r = await postJson(reloadUrl, { force });
-        resultEl.textContent = r.changed
-          ? "Reloaded " + r.loaded + " command(s)" + (r.errors ? " — " + r.errors + " error(s), check server logs" : "") + "."
-          : "No changes on disk — nothing to reload.";
-        refresh();
-        loadCommandsTable();
-      } catch (err) {
-        resultEl.textContent = "Reload failed: " + err.message;
+    function setStatusBadge(status, env) {
+      const el = document.getElementById("statusBadge");
+      const map = {
+        healthy: ["badge-healthy", "● Healthy"],
+        degraded: ["badge-degraded", "● Degraded"],
+        down: ["badge-down", "● Down"],
+      };
+      const [cls, label] = map[status] || map.degraded;
+      el.className = "badge " + cls;
+      el.textContent = label;
+
+      if (env) {
+        document.getElementById("envBadge").textContent = env.toUpperCase();
       }
     }
 
-    function card(title, rows) {
+    function metricCard(title, mainVal, rows) {
       const rowsHtml = rows
-        .map(([k, v]) => "<div class=row><span>" + k + "</span><span>" + v + "</span></div>")
+        .map(([k, v]) => '<div class="card-row"><span>' + k + '</span><span>' + v + '</span></div>')
         .join("");
-      return "<div class=card><h2>" + title + "</h2>" + rowsHtml + "</div>";
-    }
-
-    function badVal(n) {
-      return n > 0 ? '<span class="bad">' + n + "</span>" : String(n);
-    }
-
-    function setStatusBadge(status) {
-      const map = {
-        healthy: ["🟢", "Healthy"],
-        degraded: ["🟡", "Degraded"],
-        down: ["🔴", "Down"],
-      };
-      const [icon, label] = map[status] || map.degraded;
-      document.getElementById("statusBadge").textContent = icon + " " + label;
+      return '<div class="card"><div class="card-title">' + title + '</div><div class="card-metric">' + mainVal + '</div><div class="card-rows">' + rowsHtml + '</div></div>';
     }
 
     async function refresh() {
@@ -659,58 +1069,146 @@ function renderPage() {
         if (!res.ok) throw new Error("HTTP " + res.status);
         const s = await res.json();
 
-        setStatusBadge(s.status);
+        setStatusBadge(s.status, s.nodeEnv);
 
-        const topCommandsRows = s.topCommands.length
-          ? s.topCommands.map((c) => ["!" + c.name, c.total + (c.failed ? " (" + c.failed + " failed)" : "")])
-          : [["No usage yet", ""]];
-
+        const grid = document.getElementById("metricsGrid");
         const cards = [
-          card("Status", [
-            ["Uptime", s.uptime],
-            ["Environment", s.nodeEnv],
+          metricCard("System", s.uptime, [
+            ["Node Env", s.nodeEnv],
+            ["Host", s.keepAlive.externalUrl ? "Render / Public" : "Localhost"],
           ]),
-          card("Commands", [
-            ["Loaded", s.commands.total],
-            ["Categories", s.commands.categories],
-            ["Reloads", s.commands.loadCount],
-          ]),
-          card("Top Commands", topCommandsRows),
-          card("Messages", [
+          metricCard("Messages", s.events.completed, [
             ["Received", s.events.received],
-            ["Completed", s.events.completed],
-            ["Failed", badVal(s.events.failed)],
-            ["Avg time", s.events.avgMs + "ms"],
+            ["Failed", s.events.failed > 0 ? '<span class="bad">' + s.events.failed + '</span>' : "0"],
+            ["Avg Latency", Math.round(s.events.avgMs) + "ms"],
           ]),
-          card("Commands Run", [
-            ["Successful", s.commandRuns.run],
-            ["Failed", badVal(s.commandRuns.failed)],
+          metricCard("Commands Run", s.commandRuns.run, [
+            ["Registered", s.commands.total],
+            ["Categories", s.commands.categories],
+            ["Failed", s.commandRuns.failed > 0 ? '<span class="bad">' + s.commandRuns.failed + '</span>' : "0"],
           ]),
-          card("AI (!ai command)", [
-            ["Replies", s.ai.replies],
-            ["Failures", badVal(s.ai.failures)],
+          metricCard("Gemini AI", s.ai.replies, [
+            ["Failures", s.ai.failures > 0 ? '<span class="bad">' + s.ai.failures + '</span>' : "0"],
+            ["Command", "!ai"],
           ]),
-          card("AI Context Cache", [
-            ["Cached users", s.aiContext.cachedUsers + " / " + s.aiContext.maxUsers],
-            ["Calls (last min)", s.aiContext.recentCallsLastMinute],
+          metricCard("AI Context Cache", s.aiContext.cachedUsers + " / " + s.aiContext.maxUsers, [
+            ["Calls (1 min)", s.aiContext.recentCallsLastMinute],
+            ["Capacity", Math.round((s.aiContext.cachedUsers / s.aiContext.maxUsers) * 100) + "%"],
           ]),
-          card("Queue", [
+          metricCard("Queue & Ping", s.queue.active + " active", [
             ["Queued", s.queue.queued],
-            ["Active", s.queue.active],
-            ["Concurrency", s.queue.concurrency],
-            ["Accepting", s.queue.accepting ? "yes" : "no"],
-          ]),
-          card("Keep-Alive", [
-            ["Running", s.keepAlive.running ? "yes" : "no"],
-            ["Interval", s.keepAlive.intervalMinutes + " min"],
+            ["Keep-Alive", s.keepAlive.running ? s.keepAlive.intervalMinutes + "m ping" : "Disabled"],
           ]),
         ];
+        grid.innerHTML = cards.join("");
 
-        document.getElementById("grid").innerHTML = cards.join("");
-        document.getElementById("updated").textContent = "Updated " + new Date().toLocaleTimeString();
+        // Top Commands Table
+        const tbody = document.getElementById("topCommandsBody");
+        if (!s.topCommands || !s.topCommands.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="color: #7d8590; text-align: center;">No command usage recorded yet.</td></tr>';
+        } else {
+          tbody.innerHTML = s.topCommands.map(c => 
+            '<tr>' +
+            '<td class="cmd-name">!' + c.name + '</td>' +
+            '<td>' + c.total + '</td>' +
+            '<td>' + c.run + '</td>' +
+            '<td>' + (c.failed > 0 ? '<span class="bad">' + c.failed + '</span>' : '0') + '</td>' +
+            '</tr>'
+          ).join("");
+        }
+
+        document.getElementById("lastUpdated").textContent = "Updated " + new Date().toLocaleTimeString();
       } catch (err) {
-        document.getElementById("updated").textContent = "Failed to load stats: " + err.message;
+        document.getElementById("lastUpdated").textContent = "Failed to update: " + err.message;
       }
+    }
+
+    // Commands Management
+    async function loadCommandsTable() {
+      const tbody = document.getElementById("commandsTableBody");
+      try {
+        const res = await fetch(commandsUrl);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        cachedCommands = data.commands || [];
+        renderCommandsTable(cachedCommands);
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color: #f85149; text-align: center;">Failed to load commands: ' + err.message + '</td></tr>';
+      }
+    }
+
+    function renderCommandsTable(commands) {
+      const tbody = document.getElementById("commandsTableBody");
+      if (!commands.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color: #7d8590; text-align: center;">No matching commands found.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = commands.map(c => {
+        const tags = (c.hidden ? '<span class="tag tag-hidden">hidden</span>' : "") +
+                     (c.disabled ? '<span class="tag tag-disabled">disabled</span>' : "");
+        const roleCls = c.requiredRole === "OWNER" ? "role-owner" : c.requiredRole === "ADMIN" ? "role-admin" : "";
+        return '<tr>' +
+          '<td><span class="cmd-name">!' + c.name + '</span>' + tags + '</td>' +
+          '<td>' + c.category + '</td>' +
+          '<td><span class="tag tag-role ' + roleCls + '">' + c.requiredRole + '</span></td>' +
+          '<td>' +
+            '<button class="btn" style="padding: 0.2rem 0.5rem; font-size: 0.72rem; margin-right: 0.3rem;" onclick="toggleHide(\\'' + c.name + '\\', ' + !c.hidden + ')">' + (c.hidden ? "Unhide" : "Hide") + '</button>' +
+            '<button class="btn" style="padding: 0.2rem 0.5rem; font-size: 0.72rem;" onclick="toggleDisable(\\'' + c.name + '\\', ' + !c.disabled + ')">' + (c.disabled ? "Enable" : "Disable") + '</button>' +
+          '</td>' +
+        '</tr>';
+      }).join("");
+    }
+
+    function filterCommandsTable() {
+      const q = document.getElementById("cmdSearchInput").value.trim().toLowerCase();
+      if (!q) {
+        renderCommandsTable(cachedCommands);
+        return;
+      }
+      const filtered = cachedCommands.filter(c => 
+        c.name.toLowerCase().includes(q) || 
+        c.category.toLowerCase().includes(q) || 
+        c.requiredRole.toLowerCase().includes(q)
+      );
+      renderCommandsTable(filtered);
+    }
+
+    async function toggleHide(name, hidden) {
+      try {
+        await postJson("/dashboard/api/commands/" + encodeURIComponent(name) + "/hide", { hidden });
+        loadCommandsTable();
+      } catch (err) {
+        alert("Failed: " + err.message);
+      }
+    }
+
+    async function toggleDisable(name, disabled) {
+      try {
+        await postJson("/dashboard/api/commands/" + encodeURIComponent(name) + "/disable", { disabled });
+        loadCommandsTable();
+        refresh();
+      } catch (err) {
+        alert("Failed: " + err.message);
+      }
+    }
+
+    async function reloadCommands(force) {
+      const resEl = document.getElementById("reloadResult");
+      resEl.textContent = "Reloading…";
+      try {
+        const r = await postJson(reloadUrl, { force });
+        resEl.textContent = r.changed ? "Reloaded " + r.loaded + " command(s)." : "No changes detected on disk.";
+        loadCommandsTable();
+        refresh();
+      } catch (err) {
+        resEl.textContent = "Failed: " + err.message;
+      }
+    }
+
+    // Settings
+    function updatePersonaCount() {
+      const len = document.getElementById("personaInput").value.length;
+      document.getElementById("personaCharCount").textContent = len + " / 2000 chars";
     }
 
     async function loadSettings() {
@@ -720,10 +1218,11 @@ function renderPage() {
         const s = await res.json();
 
         document.getElementById("logLevelSelect").value = s.logLevel;
-        document.getElementById("logLevelDefaultTag").textContent = s.logLevelIsDefault ? "" : "(modified)";
+        document.getElementById("logLevelTag").textContent = s.logLevelIsDefault ? "" : "(custom)";
 
         document.getElementById("personaInput").value = s.geminiSystemPrompt;
         document.getElementById("personaDefaultTag").textContent = s.geminiSystemPromptIsDefault ? "" : "(modified)";
+        updatePersonaCount();
 
         document.getElementById("keepAliveInput").value = s.keepAlive.intervalMinutes;
       } catch (err) {
@@ -732,113 +1231,53 @@ function renderPage() {
     }
 
     async function setLogLevel(level) {
-      const resultEl = document.getElementById("settingsResult");
+      const resEl = document.getElementById("settingsResult");
       try {
         await postJson("/dashboard/api/settings/log-level", { level });
-        resultEl.textContent = "Log level set to " + level + ".";
+        resEl.textContent = "Log level updated to " + level + ".";
         loadSettings();
       } catch (err) {
-        resultEl.textContent = "Failed: " + err.message;
+        resEl.textContent = "Failed: " + err.message;
       }
     }
 
     async function setKeepAliveInterval() {
-      const resultEl = document.getElementById("settingsResult");
+      const resEl = document.getElementById("settingsResult");
       const minutes = Number(document.getElementById("keepAliveInput").value);
       try {
         const r = await postJson("/dashboard/api/settings/keep-alive-interval", { minutes });
-        resultEl.textContent = r.warning
-          ? "Set to " + minutes + " min. \u26a0\ufe0f " + r.warning
-          : "Keep-alive interval set to " + minutes + " min.";
+        resEl.textContent = r.warning ? "Saved: " + r.warning : "Keep-alive interval set to " + minutes + " min.";
         refresh();
         loadSettings();
       } catch (err) {
-        resultEl.textContent = "Failed: " + err.message;
+        resEl.textContent = "Failed: " + err.message;
       }
     }
 
     async function savePersona() {
-      const resultEl = document.getElementById("personaResult");
+      const resEl = document.getElementById("personaResult");
       const prompt = document.getElementById("personaInput").value;
       try {
         await postJson("/dashboard/api/settings/persona", { prompt });
-        resultEl.textContent = "Persona saved.";
+        resEl.textContent = "Persona saved.";
         loadSettings();
       } catch (err) {
-        resultEl.textContent = "Failed: " + err.message;
+        resEl.textContent = "Failed: " + err.message;
       }
     }
 
     async function resetPersona() {
-      const resultEl = document.getElementById("personaResult");
+      const resEl = document.getElementById("personaResult");
       try {
         await postJson("/dashboard/api/settings/persona/reset", {});
-        resultEl.textContent = "Persona reset to default.";
+        resEl.textContent = "Persona reset to default.";
         loadSettings();
       } catch (err) {
-        resultEl.textContent = "Failed: " + err.message;
+        resEl.textContent = "Failed: " + err.message;
       }
     }
 
-    async function loadCommandsTable() {
-      const wrap = document.getElementById("commandsTableWrap");
-      try {
-        const res = await fetch(commandsUrl);
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const { commands } = await res.json();
-
-        const rows = commands
-          .map((c) => {
-            const tags =
-              (c.hidden ? '<span class="tag hidden-tag">hidden</span>' : "") +
-              (c.disabled ? '<span class="tag disabled-tag">disabled</span>' : "");
-            return (
-              "<tr>" +
-              "<td>!" + c.name + tags + "</td>" +
-              "<td>" + c.category + "</td>" +
-              "<td>" + c.requiredRole + "</td>" +
-              '<td class="cmd-actions">' +
-              '<button onclick="toggleHide(\\'' + c.name + "', " + !c.hidden + ')">' + (c.hidden ? "Unhide" : "Hide") + "</button>" +
-              '<button onclick="toggleDisable(\\'' + c.name + "', " + !c.disabled + ')">' + (c.disabled ? "Enable" : "Disable") + "</button>" +
-              "</td>" +
-              "</tr>"
-            );
-          })
-          .join("");
-
-        wrap.innerHTML =
-          "<table><thead><tr><th>Command</th><th>Category</th><th>Role</th><th>Actions</th></tr></thead><tbody>" +
-          rows +
-          "</tbody></table>";
-      } catch (err) {
-        wrap.innerHTML = '<div class="loading-msg">Failed to load commands: ' + err.message + "</div>";
-      }
-    }
-
-    async function toggleHide(name, hidden) {
-      try {
-        const r = await postJson("/dashboard/api/commands/" + encodeURIComponent(name) + "/hide", { hidden });
-        if (r.warning) alert(r.warning);
-        loadCommandsTable();
-      } catch (err) {
-        alert("Failed: " + err.message);
-      }
-    }
-
-    async function toggleDisable(name, disabled) {
-      try {
-        const r = await postJson("/dashboard/api/commands/" + encodeURIComponent(name) + "/disable", { disabled });
-        if (r.warning) alert(r.warning);
-        loadCommandsTable();
-        refresh();
-      } catch (err) {
-        alert("Failed: " + err.message);
-      }
-    }
-
-    // Log messages can contain arbitrary text (a user's message at debug
-    // level, an error string, ...) — always escape before putting it in
-    // innerHTML so it can never be interpreted as markup.
+    // Logs
     function escapeHtml(s) {
       return String(s)
         .replace(/&/g, "&amp;")
@@ -847,57 +1286,64 @@ function renderPage() {
         .replace(/"/g, "&quot;");
     }
 
-    function renderLogLine(entry) {
-      const time = new Date(entry.timestamp).toLocaleTimeString();
-      const scope = entry.scope ? "[" + entry.scope + "] " : "";
-      return (
-        '<div class="log-line log-' + entry.level + '">' +
-        escapeHtml(time + " " + entry.level.toUpperCase() + " " + scope + entry.message) +
-        "</div>"
-      );
-    }
-
-    // "tail -f" behavior: only jump to the newest line if you were already
-    // at the bottom — if you've scrolled up to read something, a refresh
-    // shouldn't yank you away from it.
-    function isNearBottom(el) {
-      return el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    }
-
     async function loadLogs() {
-      const container = document.getElementById("logsContainer");
-      const wasAtBottom = isNearBottom(container);
       try {
         const res = await fetch(logsUrl);
         if (!res.ok) throw new Error("HTTP " + res.status);
-        const { logs } = await res.json();
-        const filter = document.getElementById("logLevelFilter").value;
-        const visible = filter === "all" ? logs : logs.filter((l) => l.level === filter);
-        container.innerHTML = visible.length
-          ? visible.map(renderLogLine).join("")
-          : '<div class="loading-msg">No log entries to show.</div>';
-        if (wasAtBottom) container.scrollTop = container.scrollHeight;
+        const data = await res.json();
+        cachedLogs = data.logs || [];
+        renderLogs();
       } catch (err) {
-        container.innerHTML = '<div class="loading-msg">Failed to load logs: ' + escapeHtml(err.message) + "</div>";
+        document.getElementById("logsContainer").textContent = "Failed to load logs: " + err.message;
       }
+    }
+
+    function renderLogs() {
+      const container = document.getElementById("logsContainer");
+      const filter = document.getElementById("logLevelFilter").value;
+      const search = document.getElementById("logSearchInput").value.trim().toLowerCase();
+
+      let visible = cachedLogs;
+      if (filter !== "all") visible = visible.filter(l => l.level === filter);
+      if (search) visible = visible.filter(l => (l.message + " " + l.scope).toLowerCase().includes(search));
+
+      if (!visible.length) {
+        container.innerHTML = '<div style="color: #7d8590;">No log entries match the current filter.</div>';
+        return;
+      }
+
+      container.innerHTML = visible.map(l => {
+        const time = new Date(l.timestamp).toLocaleTimeString();
+        const scope = l.scope ? "[" + l.scope + "] " : "";
+        return '<div class="log-line log-' + l.level + '">' +
+          escapeHtml(time + " " + l.level.toUpperCase().padEnd(5) + " " + scope + l.message) +
+        '</div>';
+      }).join("");
+
+      if (document.getElementById("autoScrollCheck").checked) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    function clearLogsView() {
+      cachedLogs = [];
+      renderLogs();
     }
 
     async function logout() {
       try {
         await postJson("/dashboard/api/logout", {});
-      } catch (err) {
-        // Even if this fails, fall through to the reload — worst case the
-        // session cookie is still valid and the page just loads again.
-      }
+      } catch {}
       window.location.href = "/dashboard";
     }
 
+    // Initial boot
     refresh();
-    loadSettings();
-    loadCommandsTable();
-    loadLogs();
     setInterval(refresh, 15000);
-    setInterval(loadLogs, 5000);
+    setInterval(() => {
+      const logsActive = document.getElementById("tab-logs").classList.contains("active");
+      if (logsActive) loadLogs();
+    }, 5000);
   </script>
 </body>
 </html>`;
